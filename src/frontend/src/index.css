@@ -1,0 +1,117 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "GeneralSans";
+  src: url("/assets/fonts/GeneralSans.woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrainsMono";
+  src: url("/assets/fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.875rem;
+
+    /* Trading Terminal Dark Theme - OKLCH values */
+    /* Page background: #0B0F14 */
+    --background: 0.112 0.012 240;
+    /* Card background: #121A22 */
+    --card: 0.148 0.018 240;
+    /* Card foreground: #E8EEF6 */
+    --card-foreground: 0.91 0.015 240;
+    /* Popover */
+    --popover: 0.168 0.02 240;
+    --popover-foreground: 0.91 0.015 240;
+    /* Foreground: #E8EEF6 */
+    --foreground: 0.91 0.015 240;
+    /* Primary: teal accent #22D3EE */
+    --primary: 0.785 0.135 200;
+    --primary-foreground: 0.112 0.012 240;
+    /* Secondary */
+    --secondary: 0.198 0.022 240;
+    --secondary-foreground: 0.91 0.015 240;
+    /* Muted: #7E8A99 */
+    --muted: 0.198 0.018 240;
+    --muted-foreground: 0.612 0.02 240;
+    /* Accent */
+    --accent: 0.248 0.025 240;
+    --accent-foreground: 0.91 0.015 240;
+    /* Destructive: #EF4444 */
+    --destructive: 0.637 0.22 25;
+    --destructive-foreground: 0.985 0 0;
+    /* Border: rgba(255,255,255,0.08) */
+    --border: 1 0 0 / 8%;
+    --input: 1 0 0 / 10%;
+    --ring: 0.785 0.135 200;
+    /* Chart colors */
+    --chart-1: 0.723 0.185 150; /* green #22C55E */
+    --chart-2: 0.637 0.22 25; /* red #EF4444 */
+    --chart-3: 0.785 0.135 200; /* teal #22D3EE */
+    --chart-4: 0.62 0.17 260; /* blue #3B82F6 */
+    --chart-5: 0.81 0.165 85; /* yellow */
+    /* Sidebar */
+    --sidebar: 0.13 0.016 240;
+    --sidebar-foreground: 0.91 0.015 240;
+    --sidebar-primary: 0.785 0.135 200;
+    --sidebar-primary-foreground: 0.112 0.012 240;
+    --sidebar-accent: 0.198 0.022 240;
+    --sidebar-accent-foreground: 0.91 0.015 240;
+    --sidebar-border: 1 0 0 / 8%;
+    --sidebar-ring: 0.785 0.135 200;
+    /* Semantic colors */
+    --positive: 0.723 0.185 150;
+    --negative: 0.637 0.22 25;
+    --accent-teal: 0.785 0.135 200;
+    --accent-blue: 0.62 0.17 260;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", "GeneralSans", system-ui, sans-serif;
+    background: radial-gradient(
+        ellipse at 20% 50%,
+        oklch(0.135 0.02 230 / 0.6),
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse at 80% 20%,
+        oklch(0.13 0.018 250 / 0.4),
+        transparent 50%
+      ), oklch(0.112 0.012 240);
+    min-height: 100vh;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: oklch(0.148 0.018 240);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.3 0.02 240);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.4 0.025 240);
+  }
+}
