@@ -46,8 +46,8 @@ function SparklineChart({
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  const w = 64;
-  const h = 28;
+  const w = 52;
+  const h = 24;
   const pts = data
     .map((v, i) => {
       const x = (i / (data.length - 1)) * w;
@@ -62,7 +62,7 @@ function SparklineChart({
       width={w}
       height={h}
       viewBox={`0 0 ${w} ${h}`}
-      className="shrink-0"
+      overflow="hidden"
       aria-hidden="true"
       role="img"
     >
@@ -274,7 +274,7 @@ export function MarketWatch() {
                 <div
                   key={asset.id}
                   data-ocid="market.item.1"
-                  className="flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer transition-colors hover:bg-white/[0.03]"
+                  className="flex items-center gap-2 px-2 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-white/[0.03]"
                 >
                   {/* Icon */}
                   <div
@@ -288,24 +288,24 @@ export function MarketWatch() {
                     {asset.symbol[0]}
                   </div>
 
-                  {/* Name + price */}
-                  <div className="flex-1 min-w-0">
+                  {/* Name + price — flex-1 ensures it fills available space and truncates if needed */}
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     <div className="flex items-center gap-1.5">
                       <span
-                        className="text-sm font-semibold"
+                        className="text-sm font-semibold truncate"
                         style={{ color: "oklch(0.910 0.015 240)" }}
                       >
                         {asset.symbol}
                       </span>
                       <span
-                        className="text-[11px]"
+                        className="text-[11px] truncate"
                         style={{ color: "oklch(0.500 0.015 240)" }}
                       >
                         {asset.name}
                       </span>
                     </div>
                     <div
-                      className="text-sm font-mono font-semibold mt-0.5"
+                      className="text-sm font-mono font-semibold mt-0.5 truncate"
                       style={{ color: "oklch(0.870 0.012 240)" }}
                     >
                       $
@@ -316,16 +316,14 @@ export function MarketWatch() {
                     </div>
                   </div>
 
-                  {/* Sparkline */}
-                  <SparklineChart
-                    data={asset.sparklineData}
-                    positive={isPositive}
-                  />
-
-                  {/* Change */}
-                  <div className="text-right shrink-0">
+                  {/* Right column: sparkline + change % stacked vertically — fixed width, never overlaps text */}
+                  <div className="flex flex-col items-end gap-0.5 shrink-0">
+                    <SparklineChart
+                      data={asset.sparklineData}
+                      positive={isPositive}
+                    />
                     <div
-                      className="flex items-center justify-end gap-0.5 text-xs font-semibold"
+                      className="flex items-center gap-0.5 text-xs font-semibold"
                       style={{
                         color: isPositive
                           ? "oklch(0.723 0.185 150)"
@@ -341,7 +339,7 @@ export function MarketWatch() {
                       {asset.change24h.toFixed(2)}%
                     </div>
                     <div
-                      className="text-[10px] mt-0.5"
+                      className="text-[10px]"
                       style={{ color: "oklch(0.500 0.015 240)" }}
                     >
                       24h

@@ -1,7 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
 import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
 
@@ -67,28 +67,12 @@ interface CandlestickChartProps {
   klines: KlineBar[];
   pMin: number;
   pMax: number;
-  /** Ref that the parent updates directly to patch the last candle without state change */
-  liveCloseRef: React.RefObject<number>;
 }
 
-/**
- * Pure chart canvas — memoized so it only re-renders when klines/pMin/pMax change.
- * Live price ticks are applied directly via DOM to the last candle body+wick
- * without touching React state at all.
- */
-const CandlestickChart = memo(function CandlestickChart({
-  klines,
-  pMin,
-  pMax,
-  liveCloseRef,
-}: CandlestickChartProps) {
+function CandlestickChart({ klines, pMin, pMax }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 });
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-
-  // IDs for direct DOM patching of the last candle
-  const LAST_BODY_ID = "btc-last-body";
-  const LAST_WICK_ID = "btc-last-wick";
 
   // Observe container size
   useEffect(() => {
@@ -103,6 +87,7 @@ const CandlestickChart = memo(function CandlestickChart({
       }
     });
     ro.observe(el);
+    // Initial measurement
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
       setDimensions({ width: rect.width, height: rect.height });
@@ -110,69 +95,13 @@ const CandlestickChart = memo(function CandlestickChart({
     return () => ro.disconnect();
   }, []);
 
-  // Subscribe to live price and patch last candle DOM directly — zero re-renders
-  useEffect(() => {
-    // We poll liveCloseRef via rAF so we don't need any state update
-    let rafId: number;
-    let lastPatched = -1;
-
-    function patch() {
-      const close = liveCloseRef.current;
-      if (close > 0 && close !== lastPatched && klines.length > 0) {
-        const last = klines[klines.length - 1];
-        const { width, height } = dimensions;
-        const chartW = Math.max(1, width - PAD.left - PAD.right);
-        const chartH = Math.max(1, height - PAD.top - PAD.bottom);
-        const priceToY = (p: number) => {
-          if (pMax === pMin) return PAD.top + chartH / 2;
-          return PAD.top + ((pMax - p) / (pMax - pMin)) * chartH;
-        };
-
-        const n = klines.length;
-        const slotW = chartW / n;
-        const bodyW = Math.max(1, slotW * 0.6);
-        const cx = PAD.left + (n - 0.5) * slotW;
-        const isGreen = close >= last.open;
-        const color = isGreen ? GREEN : RED;
-
-        const wickTop = priceToY(Math.max(last.high, close));
-        const wickBottom = priceToY(last.low);
-        const bodyTop = priceToY(Math.max(last.open, close));
-        const bodyBottom = priceToY(Math.min(last.open, close));
-        const bodyHeight = Math.max(1, bodyBottom - bodyTop);
-
-        const bodyEl = document.getElementById(LAST_BODY_ID);
-        const wickEl = document.getElementById(LAST_WICK_ID);
-
-        if (bodyEl) {
-          bodyEl.setAttribute("x", String(cx - bodyW / 2));
-          bodyEl.setAttribute("y", String(bodyTop));
-          bodyEl.setAttribute("width", String(bodyW));
-          bodyEl.setAttribute("height", String(bodyHeight));
-          bodyEl.setAttribute("fill", color);
-        }
-        if (wickEl) {
-          wickEl.setAttribute("x1", String(cx));
-          wickEl.setAttribute("y1", String(wickTop));
-          wickEl.setAttribute("x2", String(cx));
-          wickEl.setAttribute("y2", String(wickBottom));
-          wickEl.setAttribute("stroke", color);
-        }
-
-        lastPatched = close;
-      }
-      rafId = requestAnimationFrame(patch);
-    }
-
-    rafId = requestAnimationFrame(patch);
-    return () => cancelAnimationFrame(rafId);
-  }, [klines, pMin, pMax, dimensions, liveCloseRef]);
-
   const { width, height } = dimensions;
 
+  // Derived chart area
   const chartW = Math.max(1, width - PAD.left - PAD.right);
   const chartH = Math.max(1, height - PAD.top - PAD.bottom);
 
+  // Price → Y coordinate (SVG Y is inverted)
   const priceToY = useCallback(
     (p: number) => {
       if (pMax === pMin) return PAD.top + chartH / 2;
@@ -181,6 +110,7 @@ const CandlestickChart = memo(function CandlestickChart({
     [pMin, pMax, chartH],
   );
 
+  // Y axis labels (5 evenly spaced)
   const yLabels = useMemo(() => {
     const count = 5;
     return Array.from({ length: count }, (_, i) => {
@@ -189,6 +119,7 @@ const CandlestickChart = memo(function CandlestickChart({
     });
   }, [pMin, pMax, priceToY]);
 
+  // Candle geometry
   const candles = useMemo(() => {
     if (!klines.length) return [];
     const n = klines.length;
@@ -203,7 +134,6 @@ const CandlestickChart = memo(function CandlestickChart({
       const bodyBottom = priceToY(Math.min(k.open, k.close));
       const bodyHeight = Math.max(1, bodyBottom - bodyTop);
       const color = k.isGreen ? GREEN : RED;
-      const isLast = i === n - 1;
 
       return {
         key: `candle-${i}`,
@@ -219,11 +149,11 @@ const CandlestickChart = memo(function CandlestickChart({
         hoverX: PAD.left + i * slotW,
         hoverY: PAD.top,
         hoverH: chartH,
-        isLast,
       };
     });
   }, [klines, chartW, chartH, priceToY]);
 
+  // X axis labels (~every 8 candles)
   const xLabels = useMemo(() => {
     if (!klines.length) return [];
     const n = klines.length;
@@ -240,6 +170,7 @@ const CandlestickChart = memo(function CandlestickChart({
     return result;
   }, [klines, chartW]);
 
+  // Horizontal grid lines at y-label positions
   const gridLines = yLabels.map((yl) => ({ y: yl.y, key: `grid-${yl.key}` }));
 
   const handleMouseMove = useCallback(
@@ -309,9 +240,8 @@ const CandlestickChart = memo(function CandlestickChart({
         {/* Candles */}
         {candles.map((c) => (
           <g key={c.key}>
-            {/* Wick — last candle gets an id for direct DOM patching */}
+            {/* Wick */}
             <line
-              id={c.isLast ? LAST_WICK_ID : undefined}
               x1={c.cx}
               y1={c.wickTop}
               x2={c.cx}
@@ -319,9 +249,8 @@ const CandlestickChart = memo(function CandlestickChart({
               stroke={c.color}
               strokeWidth={1}
             />
-            {/* Body — last candle gets an id for direct DOM patching */}
+            {/* Body */}
             <rect
-              id={c.isLast ? LAST_BODY_ID : undefined}
               x={c.cx - c.bodyW / 2}
               y={c.bodyTop}
               width={c.bodyW}
@@ -391,92 +320,7 @@ const CandlestickChart = memo(function CandlestickChart({
       )}
     </div>
   );
-});
-
-/**
- * Price header — isolated component that subscribes to the price feed.
- * Re-renders on every price tick but is completely separate from the chart canvas.
- */
-const ChartPriceHeader = memo(function ChartPriceHeader({
-  seedPrice,
-  seedChange,
-  liveCloseRef,
-  isLoading,
-  onPriceUpdate,
-}: {
-  seedPrice: number;
-  seedChange: number;
-  liveCloseRef: React.RefObject<number>;
-  isLoading: boolean;
-  /** Notify parent when we have a fresh price so it can store into liveCloseRef */
-  onPriceUpdate: (price: number, change: number, open: number) => void;
-}) {
-  const { prices } = useDzengiPriceFeed();
-  const btcFeed = prices[BTC_SYMBOL];
-
-  const currentPrice = btcFeed?.price ?? seedPrice;
-  const priceChangePercent = btcFeed?.change24h ?? seedChange;
-  const priceChange =
-    btcFeed && btcFeed.open > 0 ? btcFeed.price - btcFeed.open : 0;
-  const isPositive = priceChangePercent >= 0;
-
-  // Write live price into the ref (no setState — chart canvas reads via rAF)
-  useEffect(() => {
-    if (currentPrice > 0) {
-      liveCloseRef.current = currentPrice;
-      onPriceUpdate(currentPrice, priceChangePercent, btcFeed?.open ?? 0);
-    }
-  }, [currentPrice, priceChangePercent, btcFeed, liveCloseRef, onPriceUpdate]);
-
-  return (
-    <div>
-      <div className="flex items-center gap-2">
-        <span
-          className="text-base font-semibold"
-          style={{ color: "oklch(0.910 0.015 240)" }}
-        >
-          BTC / USD
-        </span>
-        <span
-          className="text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wider"
-          style={{
-            background: "oklch(0.785 0.135 200 / 0.15)",
-            color: "oklch(0.785 0.135 200)",
-          }}
-        >
-          Dzengi
-        </span>
-      </div>
-      <div className="flex items-end gap-3 mt-1">
-        <span
-          className="text-3xl font-bold tracking-tight"
-          style={{ color: "oklch(0.960 0.010 240)" }}
-        >
-          {isLoading ? "\u2014" : formatPrice(currentPrice)}
-        </span>
-        {!isLoading && (
-          <div
-            className="flex items-center gap-1 mb-1 text-sm font-semibold"
-            style={{
-              color: isPositive
-                ? "oklch(0.723 0.185 150)"
-                : "oklch(0.637 0.220 25)",
-            }}
-          >
-            {isPositive ? (
-              <TrendingUp className="w-4 h-4" />
-            ) : (
-              <TrendingDown className="w-4 h-4" />
-            )}
-            {isPositive ? "+" : ""}
-            {priceChange.toFixed(0)} ({isPositive ? "+" : ""}
-            {priceChangePercent.toFixed(2)}%)
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
+}
 
 export function BtcChart() {
   const [selectedInterval, setSelectedInterval] = useState<Interval>("1h");
@@ -488,20 +332,15 @@ export function BtcChart() {
 
   const isMountedRef = useRef(true);
 
-  /**
-   * Ref that holds the latest live close price.
-   * Written by ChartPriceHeader (which re-renders on each tick).
-   * Read by CandlestickChart via rAF to directly patch the last candle DOM —
-   * so the chart SVG never goes through React reconciliation on a price tick.
-   */
-  const liveCloseRef = useRef<number>(0);
+  // Live price from Dzengi WebSocket
+  const { prices } = useDzengiPriceFeed();
+  const btcFeed = prices[BTC_SYMBOL];
 
-  const handlePriceUpdate = useCallback(
-    (price: number, _change: number, _open: number) => {
-      liveCloseRef.current = price;
-    },
-    [],
-  );
+  // Derive displayed price: prefer WS feed, fall back to seed from REST
+  const currentPrice = btcFeed?.price ?? seedPrice;
+  const priceChangePercent = btcFeed?.change24h ?? seedChange;
+  const priceChange =
+    btcFeed && btcFeed.open > 0 ? btcFeed.price - btcFeed.open : 0;
 
   // Fetch current ticker price as seed (runs once on mount)
   useEffect(() => {
@@ -517,7 +356,6 @@ export function BtcChart() {
         if (p > 0 && isMountedRef.current) {
           setSeedPrice(p);
           setSeedChange(pct);
-          liveCloseRef.current = p;
         }
       } catch {
         // Silently fail
@@ -526,56 +364,53 @@ export function BtcChart() {
     fetchSeedPrice();
   }, []);
 
-  const fetchKlines = useCallback(async (iv: Interval, showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    try {
-      const dzengiInterval = DZENGI_INTERVAL[iv];
-      const candlesRes = await fetch(
-        `${DZENGI_MARKET_BASE}/klines?symbol=${encodeURIComponent(BTC_SYMBOL)}&interval=${dzengiInterval}&limit=100`,
-      );
+  const fetchKlines = useCallback(
+    async (iv: Interval, showRefresh = false) => {
+      if (showRefresh) setRefreshing(true);
+      try {
+        const dzengiInterval = DZENGI_INTERVAL[iv];
+        const candlesRes = await fetch(
+          `${DZENGI_MARKET_BASE}/klines?symbol=${encodeURIComponent(BTC_SYMBOL)}&interval=${dzengiInterval}&limit=100`,
+        );
 
-      if (candlesRes.ok) {
-        const raw: unknown = await candlesRes.json();
-        const items: [number, string, string, string, string, number][] =
-          Array.isArray(raw)
-            ? (raw as [number, string, string, string, string, number][])
-            : ((
-                raw as {
-                  results?: [number, string, string, string, string, number][];
-                }
-              ).results ?? []);
-        const bars: KlineBar[] = items.map((k) => {
-          const o = Number.parseFloat(k[1]);
-          const h = Number.parseFloat(k[2]);
-          const l = Number.parseFloat(k[3]);
-          const c = Number.parseFloat(k[4]);
-          const isGreen = c >= o;
-          return {
-            time: formatTime(k[0], iv),
-            open: o,
-            high: h,
-            low: l,
-            close: c,
-            isGreen,
-          };
-        });
-        if (isMountedRef.current) {
-          setKlines(bars);
-          if (bars.length > 0 && liveCloseRef.current <= 0) {
-            liveCloseRef.current = bars[bars.length - 1].close;
-            setSeedPrice(bars[bars.length - 1].close);
+        if (candlesRes.ok) {
+          const raw: {
+            results: [number, string, string, string, string, number][];
+          } = await candlesRes.json();
+          const items = raw.results ?? [];
+          const bars: KlineBar[] = items.map((k) => {
+            const o = Number.parseFloat(k[1]);
+            const h = Number.parseFloat(k[2]);
+            const l = Number.parseFloat(k[3]);
+            const c = Number.parseFloat(k[4]);
+            const isGreen = c >= o;
+            return {
+              time: formatTime(k[0], iv),
+              open: o,
+              high: h,
+              low: l,
+              close: c,
+              isGreen,
+            };
+          });
+          if (isMountedRef.current) {
+            setKlines(bars);
+            if (bars.length > 0 && !btcFeed) {
+              setSeedPrice(bars[bars.length - 1].close);
+            }
           }
         }
+      } catch {
+        // Silently fail
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } catch {
-      // Silently fail
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, []);
+    },
+    [btcFeed],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -589,14 +424,11 @@ export function BtcChart() {
     };
   }, []);
 
-  // pMin/pMax computed from klines only — never changes on a price tick
-  const { pMin, pMax } = useMemo(() => {
-    const allPrices = klines.flatMap((k) => [k.low, k.high]);
-    return {
-      pMin: allPrices.length ? Math.min(...allPrices) * 0.9995 : 0,
-      pMax: allPrices.length ? Math.max(...allPrices) * 1.0005 : 100000,
-    };
-  }, [klines]);
+  const isPositive = priceChangePercent >= 0;
+
+  const allPrices = klines.flatMap((k) => [k.low, k.high]);
+  const pMin = allPrices.length ? Math.min(...allPrices) * 0.9995 : 0;
+  const pMax = allPrices.length ? Math.max(...allPrices) * 1.0005 : 100000;
 
   return (
     <div
@@ -615,14 +447,52 @@ export function BtcChart() {
         style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          {/* Price header — re-renders on price tick, isolated from chart */}
-          <ChartPriceHeader
-            seedPrice={seedPrice}
-            seedChange={seedChange}
-            liveCloseRef={liveCloseRef}
-            isLoading={loading}
-            onPriceUpdate={handlePriceUpdate}
-          />
+          <div>
+            <div className="flex items-center gap-2">
+              <span
+                className="text-base font-semibold"
+                style={{ color: "oklch(0.910 0.015 240)" }}
+              >
+                BTC / USD
+              </span>
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wider"
+                style={{
+                  background: "oklch(0.785 0.135 200 / 0.15)",
+                  color: "oklch(0.785 0.135 200)",
+                }}
+              >
+                Dzengi
+              </span>
+            </div>
+            <div className="flex items-end gap-3 mt-1">
+              <span
+                className="text-3xl font-bold tracking-tight"
+                style={{ color: "oklch(0.960 0.010 240)" }}
+              >
+                {loading ? "\u2014" : formatPrice(currentPrice)}
+              </span>
+              {!loading && (
+                <div
+                  className="flex items-center gap-1 mb-1 text-sm font-semibold"
+                  style={{
+                    color: isPositive
+                      ? "oklch(0.723 0.185 150)"
+                      : "oklch(0.637 0.220 25)",
+                  }}
+                >
+                  {isPositive ? (
+                    <TrendingUp className="w-4 h-4" />
+                  ) : (
+                    <TrendingDown className="w-4 h-4" />
+                  )}
+                  {isPositive ? "+" : ""}
+                  {priceChange.toFixed(0)} ({isPositive ? "+" : ""}
+                  {priceChangePercent.toFixed(2)}%)
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="flex items-center gap-2">
             {/* Interval selector */}
@@ -685,12 +555,7 @@ export function BtcChart() {
             style={{ background: "oklch(1 0 0 / 0.04)" }}
           />
         ) : (
-          <CandlestickChart
-            klines={klines}
-            pMin={pMin}
-            pMax={pMax}
-            liveCloseRef={liveCloseRef}
-          />
+          <CandlestickChart klines={klines} pMin={pMin} pMax={pMax} />
         )}
       </div>
     </div>
