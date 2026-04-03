@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
 import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -13,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
-const DZENGI_MARKET_BASE = "https://marketcap.dzengi.com/api/v1";
+const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
 
 interface KlineBar {
   time: string;
@@ -37,15 +38,17 @@ const INTERVALS: { label: string; value: Interval }[] = [
   { label: "1D", value: "1d" },
 ];
 
-// Map app interval → Dzengi interval code
+// Map app interval → demo-api-adapter interval code
 const DZENGI_INTERVAL: Record<Interval, string> = {
-  "1m": "M1",
-  "5m": "M5",
-  "15m": "M15",
-  "1h": "H1",
-  "4h": "H4",
-  "1d": "D1",
+  "1m": "1m",
+  "5m": "5m",
+  "15m": "15m",
+  "1h": "1h",
+  "4h": "4h",
+  "1d": "1d",
 };
+
+const BTC_SYMBOL = "BTC/USD_LEVERAGE";
 
 function formatPrice(p: number) {
   return `$${p.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -117,32 +120,63 @@ export function BtcChart() {
   const [selectedInterval, setSelectedInterval] = useState<Interval>("1h");
   const [klines, setKlines] = useState<KlineBar[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentPrice, setCurrentPrice] = useState(0);
-  const [priceChange, setPriceChange] = useState(0);
-  const [priceChangePercent, setPriceChangePercent] = useState(0);
+  const [seedPrice, setSeedPrice] = useState(0);
+  const [seedChange, setSeedChange] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
   const isMountedRef = useRef(true);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch candles only (no ticker — price comes from WebSocket)
+  // Live price from Dzengi WebSocket
+  const { prices } = useDzengiPriceFeed();
+  const btcFeed = prices[BTC_SYMBOL];
+
+  // Derive displayed price: prefer WS feed, fall back to seed from REST
+  const currentPrice = btcFeed?.price ?? seedPrice;
+  const priceChangePercent = btcFeed?.change24h ?? seedChange;
+  // Compute absolute change from open if available
+  const priceChange =
+    btcFeed && btcFeed.open > 0 ? btcFeed.price - btcFeed.open : 0;
+
+  // Fetch current ticker price as seed (runs once on mount)
+  useEffect(() => {
+    async function fetchSeedPrice() {
+      try {
+        const res = await fetch(
+          `${DZENGI_MARKET_BASE}/ticker/24hr?symbol=${encodeURIComponent(BTC_SYMBOL)}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const p = Number.parseFloat(data.lastPrice ?? "0");
+        const pct = Number.parseFloat(data.priceChangePercent ?? "0");
+        if (p > 0 && isMountedRef.current) {
+          setSeedPrice(p);
+          setSeedChange(pct);
+        }
+      } catch {
+        // Silently fail
+      }
+    }
+    fetchSeedPrice();
+  }, []);
+
+  // Fetch candles only (price comes from WebSocket / REST seed)
   const fetchKlines = useCallback(
     async (iv: Interval, showRefresh = false) => {
       if (showRefresh) setRefreshing(true);
       try {
         const dzengiInterval = DZENGI_INTERVAL[iv];
-        const symbol = "BTC/USD";
 
         const candlesRes = await fetch(
-          `${DZENGI_MARKET_BASE}/candles?symbol=${encodeURIComponent(symbol)}&interval=${dzengiInterval}&limit=100`,
+          `${DZENGI_MARKET_BASE}/klines?symbol=${encodeURIComponent(BTC_SYMBOL)}&interval=${dzengiInterval}&limit=100`,
         );
 
         if (candlesRes.ok) {
-          // Dzengi candle format: [timestamp_ms, open, high, low, close]
-          const raw: [number, string, string, string, string][] =
-            await candlesRes.json();
-          const bars: KlineBar[] = raw.map((k) => {
+          // demo-api-adapter klines format: { results: [[ts, open, high, low, close, vol], ...] }
+          const raw: {
+            results: [number, string, string, string, string, number][];
+          } = await candlesRes.json();
+          const items = raw.results ?? [];
+          const bars: KlineBar[] = items.map((k) => {
             const o = Number.parseFloat(k[1]);
             const h = Number.parseFloat(k[2]);
             const l = Number.parseFloat(k[3]);
@@ -161,9 +195,9 @@ export function BtcChart() {
           });
           if (isMountedRef.current) {
             setKlines(bars);
-            // Seed currentPrice from last candle only if WS hasn't connected yet
-            if (bars.length > 0 && currentPrice === 0) {
-              setCurrentPrice(bars[bars.length - 1].close);
+            // Seed price from last candle only if WS hasn't delivered a price yet
+            if (bars.length > 0 && !btcFeed) {
+              setSeedPrice(bars[bars.length - 1].close);
             }
           }
         }
@@ -176,7 +210,7 @@ export function BtcChart() {
         }
       }
     },
-    [currentPrice],
+    [btcFeed],
   );
 
   // Effect: fetch candles when interval changes
@@ -185,56 +219,10 @@ export function BtcChart() {
     fetchKlines(selectedInterval);
   }, [selectedInterval, fetchKlines]);
 
-  // Effect: WebSocket for live price ticks (runs once on mount)
   useEffect(() => {
     isMountedRef.current = true;
-
-    function connect() {
-      if (!isMountedRef.current) return;
-
-      const ws = new WebSocket("wss://stream.binance.com/ws/btcusdt@ticker");
-      wsRef.current = ws;
-
-      ws.onmessage = (event) => {
-        if (!isMountedRef.current) return;
-        try {
-          const msg = JSON.parse(event.data as string);
-          const price = Number.parseFloat(msg.c);
-          const change = Number.parseFloat(msg.p);
-          const changePct = Number.parseFloat(msg.P);
-          setCurrentPrice(price);
-          setPriceChange(change);
-          setPriceChangePercent(changePct);
-        } catch {
-          // Ignore malformed messages
-        }
-      };
-
-      ws.onclose = () => {
-        if (!isMountedRef.current) return;
-        reconnectTimerRef.current = setTimeout(connect, 3000);
-      };
-
-      ws.onerror = () => {
-        if (!isMountedRef.current) return;
-        ws.close();
-      };
-    }
-
-    connect();
-
     return () => {
       isMountedRef.current = false;
-      if (reconnectTimerRef.current !== null) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.onerror = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
     };
   }, []);
 

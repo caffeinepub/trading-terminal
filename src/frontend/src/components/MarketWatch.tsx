@@ -1,8 +1,9 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
 import { TrendingDown, TrendingUp, Wifi } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const DZENGI_MARKET_BASE = "https://marketcap.dzengi.com/api/v1";
+const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
 
 interface MarketAsset {
   id: string;
@@ -19,32 +20,23 @@ const ASSET_CONFIG = [
     symbol: "BTC",
     name: "Bitcoin",
     color: "#F7931A",
-    dzengiKey: "BTC/USD",
+    dzengiKey: "BTC/USD_LEVERAGE",
   },
   {
     id: "ethereum",
     symbol: "ETH",
     name: "Ethereum",
     color: "#627EEA",
-    dzengiKey: "ETH/USD",
+    dzengiKey: "ETH/USD_LEVERAGE",
   },
   {
-    id: "ripple",
-    symbol: "XRP",
-    name: "Ripple",
-    color: "#00AAE4",
-    dzengiKey: "XRP/USD",
+    id: "litecoin",
+    symbol: "LTC",
+    name: "Litecoin",
+    color: "#BFBBBB",
+    dzengiKey: "LTC/USD_LEVERAGE",
   },
 ];
-
-// Map Binance stream prefix → ASSET_CONFIG id
-const STREAM_TO_ASSET_ID: Record<string, string> = {
-  btcusdt: "bitcoin",
-  ethusdt: "ethereum",
-  xrpusdt: "ripple",
-};
-
-type WsStatus = "connecting" | "connected" | "disconnected";
 
 function SparklineChart({
   data,
@@ -102,30 +94,32 @@ export function MarketWatch() {
   const [assets, setAssets] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [wsStatus, setWsStatus] = useState<WsStatus>("connecting");
   const sparklineHistoryRef = useRef<Record<string, number[]>>({});
   const isMountedRef = useRef(true);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initial REST fetch to populate prices before WS connects
+  // Dzengi WebSocket feed
+  const { prices, status: wsStatus } = useDzengiPriceFeed();
+
+  // Initial REST fetch to seed prices before WS connects
+  // GET /ticker/24hr returns an array of all symbols
   const fetchPrices = useCallback(async () => {
     try {
-      const res = await fetch(`${DZENGI_MARKET_BASE}/ticker`);
+      const res = await fetch(`${DZENGI_MARKET_BASE}/ticker/24hr`);
       if (!res.ok) throw new Error("Dzengi API failed");
-      const data: Record<
-        string,
-        {
-          last_price: number;
-          past_24hrs_price_change: number;
-        }
-      > = await res.json();
+      const data: Array<{
+        symbol: string;
+        lastPrice: string;
+        priceChangePercent: string;
+      }> = await res.json();
 
       if (!isMountedRef.current) return;
 
       const updated: MarketAsset[] = ASSET_CONFIG.map((cfg) => {
-        const entry = data[cfg.dzengiKey];
-        const price = entry?.last_price ?? 0;
+        const entry = data.find((item) => item.symbol === cfg.dzengiKey);
+        const price = entry ? Number.parseFloat(entry.lastPrice) : 0;
+        const change24h = entry
+          ? Number.parseFloat(entry.priceChangePercent)
+          : 0;
         const hist = sparklineHistoryRef.current[cfg.id] ?? [];
         const newHist = [...hist, price].slice(-20);
         sparklineHistoryRef.current[cfg.id] = newHist;
@@ -134,7 +128,7 @@ export function MarketWatch() {
           symbol: cfg.symbol,
           name: cfg.name,
           price,
-          change24h: entry?.past_24hrs_price_change ?? 0,
+          change24h,
           sparklineData: newHist,
         };
       });
@@ -147,96 +141,55 @@ export function MarketWatch() {
     }
   }, []);
 
-  // Initial REST load on mount
-  useEffect(() => {
-    fetchPrices();
-  }, [fetchPrices]);
-
-  // WebSocket for live ticks (runs once on mount)
   useEffect(() => {
     isMountedRef.current = true;
-
-    function connect() {
-      if (!isMountedRef.current) return;
-
-      setWsStatus("connecting");
-      const ws = new WebSocket(
-        "wss://stream.binance.com/stream?streams=btcusdt@ticker/ethusdt@ticker/xrpusdt@ticker",
-      );
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!isMountedRef.current) return;
-        setWsStatus("connected");
-      };
-
-      ws.onmessage = (event) => {
-        if (!isMountedRef.current) return;
-        try {
-          const envelope = JSON.parse(event.data as string) as {
-            stream: string;
-            data: { c: string; p: string; P: string };
-          };
-          // stream looks like "btcusdt@ticker"
-          const streamPrefix = envelope.stream.split("@")[0];
-          const assetId = STREAM_TO_ASSET_ID[streamPrefix];
-          if (!assetId) return;
-
-          const price = Number.parseFloat(envelope.data.c);
-          const changePct = Number.parseFloat(envelope.data.P);
-
-          // Append to sparkline history
-          const hist = sparklineHistoryRef.current[assetId] ?? [];
-          const newHist = [...hist, price].slice(-20);
-          sparklineHistoryRef.current[assetId] = newHist;
-
-          setAssets((prev) => {
-            const updated = prev.map((a) => {
-              if (a.id !== assetId) return a;
-              return {
-                ...a,
-                price,
-                change24h: changePct,
-                sparklineData: newHist,
-              };
-            });
-            // If assets not yet populated, don't break rendering
-            return updated.length ? updated : prev;
-          });
-          setLastUpdated(new Date());
-        } catch {
-          // Ignore malformed messages
-        }
-      };
-
-      ws.onclose = () => {
-        if (!isMountedRef.current) return;
-        setWsStatus("disconnected");
-        reconnectTimerRef.current = setTimeout(connect, 3000);
-      };
-
-      ws.onerror = () => {
-        if (!isMountedRef.current) return;
-        ws.close();
-      };
-    }
-
-    connect();
-
+    fetchPrices();
     return () => {
       isMountedRef.current = false;
-      if (reconnectTimerRef.current !== null) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.onerror = null;
-        wsRef.current.close();
-        wsRef.current = null;
-      }
     };
-  }, []);
+  }, [fetchPrices]);
+
+  // Sync WS prices into assets state and sparkline history
+  useEffect(() => {
+    if (!Object.keys(prices).length) return;
+
+    setAssets((prev) => {
+      // If REST hasn't loaded yet, bootstrap from config
+      const base: MarketAsset[] =
+        prev.length > 0
+          ? prev
+          : ASSET_CONFIG.map((cfg) => ({
+              id: cfg.id,
+              symbol: cfg.symbol,
+              name: cfg.name,
+              price: 0,
+              change24h: 0,
+              sparklineData: [],
+            }));
+
+      return base.map((asset) => {
+        const cfg = ASSET_CONFIG.find((c) => c.id === asset.id);
+        if (!cfg) return asset;
+        const feed = prices[cfg.dzengiKey];
+        if (!feed || feed.price <= 0) return asset;
+
+        // Append to sparkline history
+        const hist = sparklineHistoryRef.current[asset.id] ?? [];
+        const newHist = [...hist, feed.price].slice(-20);
+        sparklineHistoryRef.current[asset.id] = newHist;
+
+        return {
+          ...asset,
+          price: feed.price,
+          change24h: feed.change24h,
+          sparklineData: newHist,
+        };
+      });
+    });
+
+    setLastUpdated(new Date());
+    if (isMountedRef.current) setLoading(false);
+  }, [prices]);
 
   // Badge appearance based on WS status
   const badgeColor =
@@ -407,7 +360,7 @@ export function MarketWatch() {
         style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}
       >
         <div className="grid grid-cols-3 gap-2">
-          {["BTC", "ETH", "XRP"].map((sym) => (
+          {["BTC", "ETH", "LTC"].map((sym) => (
             <div key={sym} className="text-center">
               <div
                 className="text-[10px] uppercase tracking-wider mb-1"
