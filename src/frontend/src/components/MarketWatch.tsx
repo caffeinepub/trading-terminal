@@ -2,6 +2,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingDown, TrendingUp, Wifi } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const DZENGI_MARKET_BASE = "https://marketcap.dzengi.com/api/v1";
+
 interface MarketAsset {
   id: string;
   symbol: string;
@@ -12,10 +14,37 @@ interface MarketAsset {
 }
 
 const ASSET_CONFIG = [
-  { id: "bitcoin", symbol: "BTC", name: "Bitcoin", color: "#F7931A" },
-  { id: "ethereum", symbol: "ETH", name: "Ethereum", color: "#627EEA" },
-  { id: "ripple", symbol: "XRP", name: "Ripple", color: "#00AAE4" },
+  {
+    id: "bitcoin",
+    symbol: "BTC",
+    name: "Bitcoin",
+    color: "#F7931A",
+    dzengiKey: "BTC/USD",
+  },
+  {
+    id: "ethereum",
+    symbol: "ETH",
+    name: "Ethereum",
+    color: "#627EEA",
+    dzengiKey: "ETH/USD",
+  },
+  {
+    id: "ripple",
+    symbol: "XRP",
+    name: "Ripple",
+    color: "#00AAE4",
+    dzengiKey: "XRP/USD",
+  },
 ];
+
+// Map Binance stream prefix → ASSET_CONFIG id
+const STREAM_TO_ASSET_ID: Record<string, string> = {
+  btcusdt: "bitcoin",
+  ethusdt: "ethereum",
+  xrpusdt: "ripple",
+};
+
+type WsStatus = "connecting" | "connected" | "disconnected";
 
 function SparklineChart({
   data,
@@ -73,18 +102,30 @@ export function MarketWatch() {
   const [assets, setAssets] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [wsStatus, setWsStatus] = useState<WsStatus>("connecting");
   const sparklineHistoryRef = useRef<Record<string, number[]>>({});
+  const isMountedRef = useRef(true);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Initial REST fetch to populate prices before WS connects
   const fetchPrices = useCallback(async () => {
     try {
-      const res = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,ripple&vs_currencies=usd&include_24hr_change=true",
-      );
-      if (!res.ok) throw new Error("CoinGecko API failed");
-      const data = await res.json();
+      const res = await fetch(`${DZENGI_MARKET_BASE}/ticker`);
+      if (!res.ok) throw new Error("Dzengi API failed");
+      const data: Record<
+        string,
+        {
+          last_price: number;
+          past_24hrs_price_change: number;
+        }
+      > = await res.json();
+
+      if (!isMountedRef.current) return;
+
       const updated: MarketAsset[] = ASSET_CONFIG.map((cfg) => {
-        const entry = data[cfg.id];
-        const price = entry?.usd ?? 0;
+        const entry = data[cfg.dzengiKey];
+        const price = entry?.last_price ?? 0;
         const hist = sparklineHistoryRef.current[cfg.id] ?? [];
         const newHist = [...hist, price].slice(-20);
         sparklineHistoryRef.current[cfg.id] = newHist;
@@ -93,7 +134,7 @@ export function MarketWatch() {
           symbol: cfg.symbol,
           name: cfg.name,
           price,
-          change24h: entry?.usd_24h_change ?? 0,
+          change24h: entry?.past_24hrs_price_change ?? 0,
           sparklineData: newHist,
         };
       });
@@ -102,15 +143,113 @@ export function MarketWatch() {
     } catch {
       // Silently fail — keep last known prices
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }, []);
 
+  // Initial REST load on mount
   useEffect(() => {
     fetchPrices();
-    const id = setInterval(fetchPrices, 30_000);
-    return () => clearInterval(id);
   }, [fetchPrices]);
+
+  // WebSocket for live ticks (runs once on mount)
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    function connect() {
+      if (!isMountedRef.current) return;
+
+      setWsStatus("connecting");
+      const ws = new WebSocket(
+        "wss://stream.binance.com/stream?streams=btcusdt@ticker/ethusdt@ticker/xrpusdt@ticker",
+      );
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (!isMountedRef.current) return;
+        setWsStatus("connected");
+      };
+
+      ws.onmessage = (event) => {
+        if (!isMountedRef.current) return;
+        try {
+          const envelope = JSON.parse(event.data as string) as {
+            stream: string;
+            data: { c: string; p: string; P: string };
+          };
+          // stream looks like "btcusdt@ticker"
+          const streamPrefix = envelope.stream.split("@")[0];
+          const assetId = STREAM_TO_ASSET_ID[streamPrefix];
+          if (!assetId) return;
+
+          const price = Number.parseFloat(envelope.data.c);
+          const changePct = Number.parseFloat(envelope.data.P);
+
+          // Append to sparkline history
+          const hist = sparklineHistoryRef.current[assetId] ?? [];
+          const newHist = [...hist, price].slice(-20);
+          sparklineHistoryRef.current[assetId] = newHist;
+
+          setAssets((prev) => {
+            const updated = prev.map((a) => {
+              if (a.id !== assetId) return a;
+              return {
+                ...a,
+                price,
+                change24h: changePct,
+                sparklineData: newHist,
+              };
+            });
+            // If assets not yet populated, don't break rendering
+            return updated.length ? updated : prev;
+          });
+          setLastUpdated(new Date());
+        } catch {
+          // Ignore malformed messages
+        }
+      };
+
+      ws.onclose = () => {
+        if (!isMountedRef.current) return;
+        setWsStatus("disconnected");
+        reconnectTimerRef.current = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        if (!isMountedRef.current) return;
+        ws.close();
+      };
+    }
+
+    connect();
+
+    return () => {
+      isMountedRef.current = false;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, []);
+
+  // Badge appearance based on WS status
+  const badgeColor =
+    wsStatus === "connected" ? "oklch(0.723 0.185 150)" : "oklch(0.85 0.18 85)";
+  const badgeBg =
+    wsStatus === "connected"
+      ? "oklch(0.723 0.185 150 / 0.12)"
+      : "oklch(0.85 0.18 85 / 0.12)";
+  const badgeBorder =
+    wsStatus === "connected"
+      ? "oklch(0.723 0.185 150 / 0.3)"
+      : "oklch(0.85 0.18 85 / 0.3)";
+  const badgeText = wsStatus === "connected" ? "LIVE" : "CONNECTING";
 
   return (
     <div
@@ -147,19 +286,16 @@ export function MarketWatch() {
         <div
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
           style={{
-            background: "oklch(0.723 0.185 150 / 0.12)",
-            border: "1px solid oklch(0.723 0.185 150 / 0.3)",
+            background: badgeBg,
+            border: `1px solid ${badgeBorder}`,
           }}
         >
-          <Wifi
-            className="w-3 h-3"
-            style={{ color: "oklch(0.723 0.185 150)" }}
-          />
+          <Wifi className="w-3 h-3" style={{ color: badgeColor }} />
           <span
             className="text-[10px] font-semibold uppercase tracking-wider"
-            style={{ color: "oklch(0.723 0.185 150)" }}
+            style={{ color: badgeColor }}
           >
-            LIVE
+            {badgeText}
           </span>
         </div>
       </div>

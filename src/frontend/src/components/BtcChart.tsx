@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Area,
   Bar,
@@ -13,13 +13,14 @@ import {
   YAxis,
 } from "recharts";
 
+const DZENGI_MARKET_BASE = "https://marketcap.dzengi.com/api/v1";
+
 interface KlineBar {
   time: string;
   open: number;
   high: number;
   low: number;
   close: number;
-  volume: number;
   candleRange: [number, number];
   bodyRange: [number, number];
   isGreen: boolean;
@@ -35,6 +36,16 @@ const INTERVALS: { label: string; value: Interval }[] = [
   { label: "4H", value: "4h" },
   { label: "1D", value: "1d" },
 ];
+
+// Map app interval → Dzengi interval code
+const DZENGI_INTERVAL: Record<Interval, string> = {
+  "1m": "M1",
+  "5m": "M5",
+  "15m": "M15",
+  "1h": "H1",
+  "4h": "H4",
+  "1d": "D1",
+};
 
 function formatPrice(p: number) {
   return `$${p.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -111,67 +122,124 @@ export function BtcChart() {
   const [priceChangePercent, setPriceChangePercent] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchKlines = useCallback(async (iv: Interval, showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    try {
-      const [klinesRes, tickerRes] = await Promise.all([
-        fetch(
-          `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${iv}&limit=100`,
-        ),
-        fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT"),
-      ]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const isMountedRef = useRef(true);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-      if (klinesRes.ok) {
-        const raw: any[][] = await klinesRes.json();
-        const bars: KlineBar[] = raw.map((k) => {
-          const o = Number.parseFloat(k[1]);
-          const h = Number.parseFloat(k[2]);
-          const l = Number.parseFloat(k[3]);
-          const c = Number.parseFloat(k[4]);
-          const v = Number.parseFloat(k[5]);
-          const isGreen = c >= o;
-          return {
-            time: formatTime(k[0], iv),
-            open: o,
-            high: h,
-            low: l,
-            close: c,
-            volume: v,
-            candleRange: [l, h] as [number, number],
-            bodyRange: [Math.min(o, c), Math.max(o, c)] as [number, number],
-            isGreen,
-          };
-        });
-        setKlines(bars);
-        if (bars.length > 0) setCurrentPrice(bars[bars.length - 1].close);
+  // Fetch candles only (no ticker — price comes from WebSocket)
+  const fetchKlines = useCallback(
+    async (iv: Interval, showRefresh = false) => {
+      if (showRefresh) setRefreshing(true);
+      try {
+        const dzengiInterval = DZENGI_INTERVAL[iv];
+        const symbol = "BTC/USD";
+
+        const candlesRes = await fetch(
+          `${DZENGI_MARKET_BASE}/candles?symbol=${encodeURIComponent(symbol)}&interval=${dzengiInterval}&limit=100`,
+        );
+
+        if (candlesRes.ok) {
+          // Dzengi candle format: [timestamp_ms, open, high, low, close]
+          const raw: [number, string, string, string, string][] =
+            await candlesRes.json();
+          const bars: KlineBar[] = raw.map((k) => {
+            const o = Number.parseFloat(k[1]);
+            const h = Number.parseFloat(k[2]);
+            const l = Number.parseFloat(k[3]);
+            const c = Number.parseFloat(k[4]);
+            const isGreen = c >= o;
+            return {
+              time: formatTime(k[0], iv),
+              open: o,
+              high: h,
+              low: l,
+              close: c,
+              candleRange: [l, h] as [number, number],
+              bodyRange: [Math.min(o, c), Math.max(o, c)] as [number, number],
+              isGreen,
+            };
+          });
+          if (isMountedRef.current) {
+            setKlines(bars);
+            // Seed currentPrice from last candle only if WS hasn't connected yet
+            if (bars.length > 0 && currentPrice === 0) {
+              setCurrentPrice(bars[bars.length - 1].close);
+            }
+          }
+        }
+      } catch {
+        // Silently fail — keep last known data
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
+    },
+    [currentPrice],
+  );
 
-      if (tickerRes.ok) {
-        const ticker = await tickerRes.json();
-        setPriceChange(Number.parseFloat(ticker.priceChange));
-        setPriceChangePercent(Number.parseFloat(ticker.priceChangePercent));
-      }
-    } catch {
-      // Silently fail
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
+  // Effect: fetch candles when interval changes
   useEffect(() => {
     setLoading(true);
     fetchKlines(selectedInterval);
-    const timerId = window.setInterval(
-      () => fetchKlines(selectedInterval),
-      30_000,
-    );
-    return () => window.clearInterval(timerId);
   }, [selectedInterval, fetchKlines]);
+
+  // Effect: WebSocket for live price ticks (runs once on mount)
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    function connect() {
+      if (!isMountedRef.current) return;
+
+      const ws = new WebSocket("wss://stream.binance.com/ws/btcusdt@ticker");
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        if (!isMountedRef.current) return;
+        try {
+          const msg = JSON.parse(event.data as string);
+          const price = Number.parseFloat(msg.c);
+          const change = Number.parseFloat(msg.p);
+          const changePct = Number.parseFloat(msg.P);
+          setCurrentPrice(price);
+          setPriceChange(change);
+          setPriceChangePercent(changePct);
+        } catch {
+          // Ignore malformed messages
+        }
+      };
+
+      ws.onclose = () => {
+        if (!isMountedRef.current) return;
+        reconnectTimerRef.current = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        if (!isMountedRef.current) return;
+        ws.close();
+      };
+    }
+
+    connect();
+
+    return () => {
+      isMountedRef.current = false;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, []);
 
   const isPositive = priceChangePercent >= 0;
 
-  // Build display data: show every Nth label to avoid crowding
   const displayData = klines.map((k, i) => ({
     ...k,
     displayTime:
@@ -214,7 +282,7 @@ export function BtcChart() {
                   color: "oklch(0.785 0.135 200)",
                 }}
               >
-                Binance
+                Dzengi
               </span>
             </div>
             <div className="flex items-end gap-3 mt-1">
@@ -222,7 +290,7 @@ export function BtcChart() {
                 className="text-3xl font-bold tracking-tight"
                 style={{ color: "oklch(0.960 0.010 240)" }}
               >
-                {loading ? "—" : formatPrice(currentPrice)}
+                {loading ? "\u2014" : formatPrice(currentPrice)}
               </span>
               {!loading && (
                 <div
@@ -357,14 +425,6 @@ export function BtcChart() {
                 tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
               />
               <Tooltip content={<CandleTooltip />} />
-              {/* Volume bars */}
-              <Bar
-                dataKey="volume"
-                yAxisId="vol"
-                opacity={0.3}
-                fill="oklch(0.785 0.135 200)"
-                radius={[2, 2, 0, 0]}
-              />
               {/* Close price area */}
               <Area
                 dataKey="close"
