@@ -103,7 +103,7 @@ function App() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: "easeOut" }}
           >
-            <VolumeTable />
+            <VolumeTable searchQuery={searchQuery} />
           </motion.div>
         ) : (
           <motion.div

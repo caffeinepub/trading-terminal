@@ -1,6 +1,23 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { Bell, ChevronDown, Search } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Bell,
+  Calendar,
+  ChevronDown,
+  HelpCircle,
+  LogOut,
+  Search,
+  Settings,
+  Shield,
+  Star,
+  User,
+} from "lucide-react";
+import { useState } from "react";
 
 const NAV_LINKS = [
   { label: "Dashboard" },
@@ -8,7 +25,6 @@ const NAV_LINKS = [
   { label: "Analysis" },
   { label: "Tools" },
   { label: "Volume" },
-  { label: "Account" },
 ];
 
 interface TopNavProps {
@@ -24,6 +40,8 @@ export function TopNav({
   activeView,
   onViewChange,
 }: TopNavProps) {
+  const [traderOpen, setTraderOpen] = useState(false);
+
   return (
     <header
       className="sticky top-0 z-50 w-full"
@@ -131,50 +149,196 @@ export function TopNav({
           />
         </button>
 
-        {/* User chip */}
-        <button
-          type="button"
-          className="flex items-center gap-2.5 px-3 py-1.5 rounded-full cursor-pointer hover:bg-white/5 transition-colors"
-          style={{ border: "1px solid oklch(1 0 0 / 0.08)" }}
-          data-ocid="nav.button"
-        >
-          <Avatar className="w-7 h-7">
-            <AvatarFallback
-              className="text-xs font-semibold"
-              style={{
-                background:
-                  "linear-gradient(135deg, oklch(0.785 0.135 200), oklch(0.620 0.170 260))",
-                color: "oklch(0.112 0.012 240)",
-              }}
+        {/* Trader Dropdown */}
+        <Popover open={traderOpen} onOpenChange={setTraderOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-full cursor-pointer hover:bg-white/5 transition-colors"
+              style={{ border: "1px solid oklch(1 0 0 / 0.08)" }}
+              data-ocid="nav.open_modal_button"
             >
-              TR
-            </AvatarFallback>
-          </Avatar>
-          <div className="hidden sm:flex flex-col leading-none">
-            <span
-              className="text-xs font-medium"
-              style={{ color: "oklch(0.910 0.015 240)" }}
-            >
-              Trader
-            </span>
-            <div className="flex items-center gap-1">
-              <span
-                className="w-1.5 h-1.5 rounded-full animate-pulse-slow"
-                style={{ background: "oklch(0.723 0.185 150)" }}
+              <Avatar className="w-7 h-7">
+                <AvatarFallback
+                  className="text-xs font-semibold"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, oklch(0.785 0.135 200), oklch(0.620 0.170 260))",
+                    color: "oklch(0.112 0.012 240)",
+                  }}
+                >
+                  TR
+                </AvatarFallback>
+              </Avatar>
+              <div className="hidden sm:flex flex-col leading-none">
+                <span
+                  className="text-xs font-medium"
+                  style={{ color: "oklch(0.910 0.015 240)" }}
+                >
+                  Trader
+                </span>
+                <div className="flex items-center gap-1">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full animate-pulse-slow"
+                    style={{ background: "oklch(0.723 0.185 150)" }}
+                  />
+                  <span
+                    className="text-[10px]"
+                    style={{ color: "oklch(0.723 0.185 150)" }}
+                  >
+                    Active
+                  </span>
+                </div>
+              </div>
+              <ChevronDown
+                className="w-3.5 h-3.5 transition-transform duration-200"
+                style={{
+                  color: "oklch(0.612 0.020 240)",
+                  transform: traderOpen ? "rotate(180deg)" : "rotate(0deg)",
+                }}
               />
-              <span
-                className="text-[10px]"
-                style={{ color: "oklch(0.723 0.185 150)" }}
-              >
-                Active
-              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            sideOffset={8}
+            className="w-[260px] p-0 overflow-hidden"
+            style={{
+              background: "oklch(0.155 0.020 240)",
+              border: "1px solid oklch(1 0 0 / 0.10)",
+              boxShadow: "0 16px 40px oklch(0 0 0 / 0.50)",
+            }}
+            data-ocid="nav.modal"
+          >
+            {/* Top: Avatar + Name + Badge */}
+            <div className="flex flex-col items-center gap-2 pt-5 pb-4 px-4">
+              <Avatar className="w-12 h-12">
+                <AvatarFallback
+                  className="text-base font-bold"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, oklch(0.785 0.135 200), oklch(0.620 0.170 260))",
+                    color: "oklch(0.112 0.012 240)",
+                  }}
+                >
+                  TR
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col items-center gap-1">
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: "oklch(0.910 0.015 240)" }}
+                >
+                  Trader
+                </span>
+                <span
+                  className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                  style={{
+                    background: "oklch(0.723 0.185 150 / 0.15)",
+                    color: "oklch(0.723 0.185 150)",
+                    border: "1px solid oklch(0.723 0.185 150 / 0.30)",
+                  }}
+                >
+                  ● Active
+                </span>
+              </div>
             </div>
-          </div>
-          <ChevronDown
-            className="w-3.5 h-3.5"
-            style={{ color: "oklch(0.612 0.020 240)" }}
-          />
-        </button>
+
+            {/* Divider */}
+            <div
+              className="mx-0 h-px"
+              style={{ background: "oklch(1 0 0 / 0.07)" }}
+            />
+
+            {/* Account Detail Rows */}
+            <div className="py-2 px-3">
+              {[
+                { icon: User, label: "Account ID", value: "#TRD-00142" },
+                { icon: Shield, label: "Status", value: "Verified" },
+                { icon: Calendar, label: "Member Since", value: "Jan 2024" },
+                { icon: Star, label: "Plan", value: "Pro" },
+              ].map(({ icon: Icon, label, value }) => (
+                <div
+                  key={label}
+                  className="flex items-center gap-2.5 py-1.5 px-1"
+                >
+                  <Icon
+                    className="w-3.5 h-3.5 shrink-0"
+                    style={{ color: "oklch(0.612 0.020 240)" }}
+                  />
+                  <span
+                    className="text-xs flex-1"
+                    style={{ color: "oklch(0.612 0.020 240)" }}
+                  >
+                    {label}
+                  </span>
+                  <span
+                    className="text-xs font-medium"
+                    style={{ color: "oklch(0.820 0.015 240)" }}
+                  >
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div
+              className="mx-0 h-px"
+              style={{ background: "oklch(1 0 0 / 0.07)" }}
+            />
+
+            {/* Action Rows */}
+            <div className="py-2 px-2">
+              {[
+                {
+                  icon: Settings,
+                  label: "Profile Settings",
+                  ocid: "nav.button",
+                },
+                { icon: Bell, label: "Notifications", ocid: "nav.button" },
+                {
+                  icon: HelpCircle,
+                  label: "Help & Support",
+                  ocid: "nav.button",
+                },
+              ].map(({ icon: Icon, label, ocid }) => (
+                <button
+                  key={label}
+                  type="button"
+                  data-ocid={ocid}
+                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-xs font-medium transition-colors hover:bg-white/5"
+                  style={{ color: "oklch(0.820 0.015 240)" }}
+                >
+                  <Icon
+                    className="w-3.5 h-3.5 shrink-0"
+                    style={{ color: "oklch(0.612 0.020 240)" }}
+                  />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div
+              className="mx-0 h-px"
+              style={{ background: "oklch(1 0 0 / 0.07)" }}
+            />
+
+            {/* Logout */}
+            <div className="py-2 px-2">
+              <button
+                type="button"
+                data-ocid="nav.button"
+                className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-xs font-medium transition-colors hover:bg-red-500/10"
+                style={{ color: "oklch(0.637 0.220 25)" }}
+              >
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                Log Out
+              </button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
     </header>
   );

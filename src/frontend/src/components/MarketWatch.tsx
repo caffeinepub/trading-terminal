@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
-import { TrendingDown, TrendingUp, Wifi } from "lucide-react";
+import { Lock, TrendingDown, TrendingUp, Wifi } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssetSymbol } from "../App";
 
@@ -16,6 +16,8 @@ interface MarketAsset {
   dzengiKey: AssetSymbol;
   volume24h: number;
   quoteVolume24h: number;
+  status?: "TRADING" | "BREAK" | "HALT";
+  tradingHours?: string;
 }
 
 const ASSET_CONFIG: {
@@ -116,9 +118,44 @@ export function MarketWatch({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const sparklineHistoryRef = useRef<Record<string, number[]>>({});
   const isMountedRef = useRef(true);
+  const exchangeInfoRef = useRef<
+    Map<string, { status: string; tradingHours: string }>
+  >(new Map());
 
   // Dzengi price feed
   const { prices, status: wsStatus } = useDzengiPriceFeed();
+
+  // Fetch exchangeInfo once on mount
+  useEffect(() => {
+    fetch(`${DZENGI_MARKET_BASE}/exchangeInfo`)
+      .then((r) => r.json())
+      .then((data) => {
+        const map = new Map<string, { status: string; tradingHours: string }>();
+        for (const s of data.symbols ?? []) {
+          map.set(s.symbol, {
+            status: s.status ?? "TRADING",
+            tradingHours: s.tradingHours ?? "",
+          });
+        }
+        exchangeInfoRef.current = map;
+        // Merge into existing assets if already loaded
+        if (isMountedRef.current) {
+          setAssets((prev) =>
+            prev.map((asset) => {
+              const info = map.get(asset.dzengiKey);
+              return info
+                ? {
+                    ...asset,
+                    status: info.status as MarketAsset["status"],
+                    tradingHours: info.tradingHours,
+                  }
+                : asset;
+            }),
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Initial REST fetch to seed prices
   const fetchPrices = useCallback(async () => {
@@ -148,6 +185,10 @@ export function MarketWatch({
         const hist = sparklineHistoryRef.current[cfg.id] ?? [];
         const newHist = [...hist, price].slice(-20);
         sparklineHistoryRef.current[cfg.id] = newHist;
+
+        // Merge status from exchangeInfo ref if already loaded
+        const info = exchangeInfoRef.current.get(cfg.dzengiKey);
+
         return {
           id: cfg.id,
           symbol: cfg.symbol,
@@ -158,6 +199,12 @@ export function MarketWatch({
           dzengiKey: cfg.dzengiKey,
           volume24h,
           quoteVolume24h,
+          ...(info
+            ? {
+                status: info.status as MarketAsset["status"],
+                tradingHours: info.tradingHours,
+              }
+            : {}),
         };
       });
       setAssets(updated);
@@ -318,6 +365,12 @@ export function MarketWatch({
               const cfg = ASSET_CONFIG.find((c) => c.id === asset.id);
               const isPositive = asset.change24h >= 0;
               const isSelected = selectedSymbol === asset.dzengiKey;
+              const isClosed =
+                asset.status === "BREAK" || asset.status === "HALT";
+              const statusColor =
+                asset.status === "HALT"
+                  ? "oklch(0.637 0.220 25)"
+                  : "oklch(0.85 0.18 85)";
               return (
                 <button
                   key={asset.id}
@@ -384,6 +437,18 @@ export function MarketWatch({
                         maximumFractionDigits: 2,
                       })}
                     </div>
+                    {isClosed && (
+                      <div
+                        className="flex items-center gap-0.5 text-[10px] mt-0.5"
+                        style={{ color: statusColor }}
+                        title={asset.tradingHours}
+                      >
+                        <Lock className="w-2.5 h-2.5 shrink-0" />
+                        <span>
+                          {asset.status === "HALT" ? "Halted" : "Closed"}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right column: sparkline + change % */}

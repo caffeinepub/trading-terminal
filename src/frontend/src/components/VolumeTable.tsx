@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -11,7 +12,9 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Lock,
   RefreshCw,
+  Search,
   TrendingDown,
   TrendingUp,
   Wifi,
@@ -38,6 +41,7 @@ const SKEL_ROWS = [
 
 const SKEL_COLS = [
   { id: "sym", cls: "pl-5", w: "96px" },
+  { id: "status", cls: "", w: "72px" },
   { id: "price", cls: "", w: "72px" },
   { id: "chg", cls: "", w: "72px" },
   { id: "vol", cls: "", w: "72px" },
@@ -56,6 +60,8 @@ interface TickerRow {
   highPrice: number;
   lowPrice: number;
   openPrice: number;
+  status?: "TRADING" | "BREAK" | "HALT";
+  tradingHours?: string;
 }
 
 type SortKey = keyof Pick<
@@ -292,7 +298,52 @@ const FILTER_TABS: { key: AssetCategory; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-export function VolumeTable() {
+function StatusCell({ row }: { row: TickerRow }) {
+  if (!row.status || row.status === "TRADING") {
+    return (
+      <span
+        className="flex items-center gap-1 text-xs font-medium"
+        style={{ color: "oklch(0.723 0.185 150)" }}
+        title={row.tradingHours}
+      >
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full"
+          style={{ background: "oklch(0.723 0.185 150)" }}
+        />
+        Open
+      </span>
+    );
+  }
+  if (row.status === "HALT") {
+    return (
+      <span
+        className="flex items-center gap-1 text-xs font-medium"
+        style={{ color: "oklch(0.637 0.220 25)" }}
+        title={row.tradingHours}
+      >
+        <Lock className="w-3 h-3 shrink-0" />
+        Halted
+      </span>
+    );
+  }
+  // BREAK
+  return (
+    <span
+      className="flex items-center gap-1 text-xs font-medium"
+      style={{ color: "oklch(0.85 0.18 85)" }}
+      title={row.tradingHours}
+    >
+      <Lock className="w-3 h-3 shrink-0" />
+      Closed
+    </span>
+  );
+}
+
+interface VolumeTableProps {
+  searchQuery?: string;
+}
+
+export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
   const [rows, setRows] = useState<TickerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -300,7 +351,49 @@ export function VolumeTable() {
   const [sortKey, setSortKey] = useState<SortKey>("quoteVolume");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [assetFilter, setAssetFilter] = useState<AssetCategory>("all");
+  // Local search state — synced from prop but also independently editable
+  const [localSearch, setLocalSearch] = useState(searchQuery);
   const isMountedRef = useRef(true);
+  const exchangeInfoRef = useRef<
+    Map<string, { status: string; tradingHours: string }>
+  >(new Map());
+
+  // Sync local search when parent searchQuery changes
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  // Fetch exchangeInfo once on mount to get market status
+  useEffect(() => {
+    fetch(`${DZENGI_API}/exchangeInfo`)
+      .then((r) => r.json())
+      .then((data) => {
+        const map = new Map<string, { status: string; tradingHours: string }>();
+        for (const s of data.symbols ?? []) {
+          map.set(s.symbol, {
+            status: s.status ?? "TRADING",
+            tradingHours: s.tradingHours ?? "",
+          });
+        }
+        exchangeInfoRef.current = map;
+        // Merge into existing rows if already loaded
+        if (isMountedRef.current) {
+          setRows((prev) =>
+            prev.map((r) => {
+              const info = map.get(r.symbol);
+              return info
+                ? {
+                    ...r,
+                    status: info.status as TickerRow["status"],
+                    tradingHours: info.tradingHours,
+                  }
+                : r;
+            }),
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchTickers = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
@@ -312,8 +405,21 @@ export function VolumeTable() {
       const parsed = arr
         .map((item) => parseTickerRow(item as Record<string, unknown>))
         .filter((r): r is TickerRow => r !== null);
+
+      // Merge status from exchangeInfo ref
+      const mergedRows = parsed.map((r) => {
+        const info = exchangeInfoRef.current.get(r.symbol);
+        return info
+          ? {
+              ...r,
+              status: info.status as TickerRow["status"],
+              tradingHours: info.tradingHours,
+            }
+          : r;
+      });
+
       if (isMountedRef.current) {
-        setRows(parsed);
+        setRows(mergedRows);
         setLastUpdated(new Date());
         setLoading(false);
       }
@@ -354,13 +460,20 @@ export function VolumeTable() {
     other: rows.filter((r) => classifyAsset(r) === "other").length,
   };
 
-  // Filter first, then sort
-  const filtered =
+  // Apply category filter, then search filter, then sort
+  const afterCategory =
     assetFilter === "all"
       ? rows
       : rows.filter((r) => classifyAsset(r) === assetFilter);
 
-  const sorted = [...filtered].sort((a, b) => {
+  const searchTerm = localSearch.trim().toUpperCase();
+  const afterSearch = searchTerm
+    ? afterCategory.filter((r) =>
+        r.cleanSymbol.toUpperCase().includes(searchTerm),
+      )
+    : afterCategory;
+
+  const sorted = [...afterSearch].sort((a, b) => {
     const av = a[sortKey];
     const bv = b[sortKey];
     if (typeof av === "string" && typeof bv === "string") {
@@ -372,7 +485,6 @@ export function VolumeTable() {
   });
 
   // If current filter is "other" but it now has 0 items, fall back to "all"
-  // (handles the case where the user had "other" selected and it empties)
   const effectiveFilter =
     assetFilter === "other" && categoryCounts.other === 0 ? "all" : assetFilter;
 
@@ -470,7 +582,7 @@ export function VolumeTable() {
                   border: "1px solid oklch(0.785 0.135 200 / 0.25)",
                 }}
               >
-                {effectiveFilter === "all"
+                {sorted.length === rows.length
                   ? `${rows.length} pairs`
                   : `${sorted.length} / ${rows.length} pairs`}
               </span>
@@ -510,69 +622,92 @@ export function VolumeTable() {
           </div>
         </div>
 
-        {/* Filter tabs row */}
-        <div
-          className="flex flex-wrap items-center gap-1.5 mt-3"
-          data-ocid="volume.filter.tab"
-        >
-          {visibleTabs.map((tab) => {
-            const isActive = effectiveFilter === tab.key;
-            const count = categoryCounts[tab.key];
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setAssetFilter(tab.key)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none"
-                style={{
-                  background: isActive
-                    ? "oklch(0.785 0.135 200 / 0.15)"
-                    : "oklch(1 0 0 / 0.04)",
-                  border: isActive
-                    ? "1px solid oklch(0.785 0.135 200 / 0.55)"
-                    : "1px solid oklch(1 0 0 / 0.08)",
-                  color: isActive
-                    ? "oklch(0.785 0.135 200)"
-                    : "oklch(0.550 0.015 240)",
-                  fontWeight: isActive ? 600 : 400,
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLButtonElement).style.background =
-                      "oklch(1 0 0 / 0.07)";
-                    (e.currentTarget as HTMLButtonElement).style.color =
-                      "oklch(0.720 0.015 240)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLButtonElement).style.background =
-                      "oklch(1 0 0 / 0.04)";
-                    (e.currentTarget as HTMLButtonElement).style.color =
-                      "oklch(0.550 0.015 240)";
-                  }
-                }}
-              >
-                <span>{tab.label}</span>
-                {!loading && (
-                  <span
-                    className="font-mono text-[10px] px-1 py-0 rounded"
-                    style={{
-                      background: isActive
-                        ? "oklch(0.785 0.135 200 / 0.20)"
-                        : "oklch(1 0 0 / 0.06)",
-                      color: isActive
-                        ? "oklch(0.785 0.135 200)"
-                        : "oklch(0.450 0.015 240)",
-                    }}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        {/* Search + Filter tabs row */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3">
+          {/* Search input */}
+          <div className="relative sm:w-56 shrink-0">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+              style={{ color: "oklch(0.500 0.015 240)" }}
+            />
+            <Input
+              data-ocid="volume.search_input"
+              placeholder="Search symbol..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="pl-8 h-8 text-xs rounded-full"
+              style={{
+                background: "oklch(1 0 0 / 0.05)",
+                border: "1px solid oklch(1 0 0 / 0.10)",
+                color: "oklch(0.910 0.015 240)",
+              }}
+            />
+          </div>
+
+          {/* Filter tabs */}
+          <div
+            className="flex flex-wrap items-center gap-1.5"
+            data-ocid="volume.filter.tab"
+          >
+            {visibleTabs.map((tab) => {
+              const isActive = effectiveFilter === tab.key;
+              const count = categoryCounts[tab.key];
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setAssetFilter(tab.key)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none"
+                  style={{
+                    background: isActive
+                      ? "oklch(0.785 0.135 200 / 0.15)"
+                      : "oklch(1 0 0 / 0.04)",
+                    border: isActive
+                      ? "1px solid oklch(0.785 0.135 200 / 0.55)"
+                      : "1px solid oklch(1 0 0 / 0.08)",
+                    color: isActive
+                      ? "oklch(0.785 0.135 200)"
+                      : "oklch(0.550 0.015 240)",
+                    fontWeight: isActive ? 600 : 400,
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "oklch(1 0 0 / 0.07)";
+                      (e.currentTarget as HTMLButtonElement).style.color =
+                        "oklch(0.720 0.015 240)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "oklch(1 0 0 / 0.04)";
+                      (e.currentTarget as HTMLButtonElement).style.color =
+                        "oklch(0.550 0.015 240)";
+                    }
+                  }}
+                >
+                  <span>{tab.label}</span>
+                  {!loading && (
+                    <span
+                      className="font-mono text-[10px] px-1 py-0 rounded"
+                      style={{
+                        background: isActive
+                          ? "oklch(0.785 0.135 200 / 0.20)"
+                          : "oklch(1 0 0 / 0.06)",
+                        color: isActive
+                          ? "oklch(0.785 0.135 200)"
+                          : "oklch(0.450 0.015 240)",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -588,6 +723,12 @@ export function VolumeTable() {
             >
               <TableHead className="pl-5 py-3 text-xs whitespace-nowrap">
                 {headerBtn("Symbol", "cleanSymbol")}
+              </TableHead>
+              <TableHead
+                className="py-3 text-xs whitespace-nowrap"
+                style={{ color: "oklch(0.500 0.015 240)", fontWeight: 500 }}
+              >
+                Status
               </TableHead>
               <TableHead className="py-3 text-xs whitespace-nowrap">
                 {headerBtn("Last Price", "lastPrice")}
@@ -671,6 +812,11 @@ export function VolumeTable() {
                                 : ""}
                           </span>
                         </div>
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell className="py-3">
+                        <StatusCell row={row} />
                       </TableCell>
 
                       {/* Last Price */}
@@ -780,7 +926,9 @@ export function VolumeTable() {
             📊
           </span>
           <p className="text-sm" style={{ color: "oklch(0.500 0.015 240)" }}>
-            No assets found in this category
+            {searchTerm
+              ? `No assets matching "${localSearch}"`
+              : "No assets found in this category"}
           </p>
         </div>
       )}
