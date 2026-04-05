@@ -71,6 +71,175 @@ type SortKey = keyof Pick<
 
 type SortDir = "asc" | "desc";
 
+type AssetCategory =
+  | "all"
+  | "crypto"
+  | "forex"
+  | "stocks"
+  | "commodities"
+  | "indexes"
+  | "other";
+
+const CRYPTO_BASES = [
+  "BTC",
+  "ETH",
+  "LTC",
+  "XRP",
+  "BCH",
+  "ADA",
+  "SOL",
+  "DOT",
+  "LINK",
+  "BNB",
+  "DOGE",
+  "AVAX",
+  "MATIC",
+  "UNI",
+  "ATOM",
+  "ALGO",
+  "XLM",
+  "TRX",
+  "EOS",
+  "XMR",
+  "DASH",
+  "ZEC",
+  "NEO",
+  "VET",
+  "THETA",
+  "FIL",
+  "AAVE",
+  "COMP",
+  "MKR",
+  "SNX",
+  "YFI",
+  "SUSHI",
+  "CRV",
+  "BAL",
+  "1INCH",
+  "GRT",
+  "AXS",
+  "SAND",
+  "MANA",
+  "ENJ",
+  "CHZ",
+  "HOT",
+  "XEM",
+  "NANO",
+  "ZRX",
+  "BAT",
+  "OMG",
+  "LRC",
+  "KNC",
+  "REN",
+  "NMR",
+  "OXT",
+  "BAND",
+  "STORJ",
+  "KAVA",
+  "ANKR",
+  "CELR",
+  "FET",
+  "OCEAN",
+  "RLC",
+];
+
+const FOREX_PAIRS = [
+  "EUR",
+  "GBP",
+  "JPY",
+  "AUD",
+  "CAD",
+  "CHF",
+  "NZD",
+  "SEK",
+  "NOK",
+  "DKK",
+  "HKD",
+  "SGD",
+  "MXN",
+  "PLN",
+  "HUF",
+  "CZK",
+  "TRY",
+  "ZAR",
+  "CNH",
+  "ILS",
+  "USD",
+];
+
+const COMMODITIES = [
+  "XAU",
+  "XAG",
+  "XPT",
+  "XPD",
+  "OIL",
+  "BRENT",
+  "WTI",
+  "GAS",
+  "WHEAT",
+  "CORN",
+  "SOYA",
+  "COFFEE",
+  "COCOA",
+  "SUGAR",
+  "COTTON",
+  "COPPER",
+  "ALUM",
+  "NICKEL",
+  "ZINC",
+  "LEAD",
+];
+
+const INDEX_SYMBOLS = new Set([
+  "US100",
+  "US500",
+  "US30",
+  "DE40",
+  "EU50",
+  "FR40",
+  "IT40",
+  "SP35",
+  "NL25",
+  "CN50",
+  "UK100",
+  "HK50",
+  "AU200",
+  "JP225",
+]);
+
+function classifyAsset(row: TickerRow): Exclude<AssetCategory, "all"> {
+  const sym = row.cleanSymbol;
+
+  // No slash: could be index, stock, or named commodity
+  if (!sym.includes("/")) {
+    // Strip trailing dot to get base name
+    const base = sym.endsWith(".") ? sym.slice(0, -1) : sym;
+    // Index check: base (without trailing dot) is in INDEX_SYMBOLS
+    if (INDEX_SYMBOLS.has(base)) return "indexes";
+    // Named commodity fallback (Gold., Silver., Oil - Crude., etc.)
+    if (
+      sym.includes("Gold") ||
+      sym.includes("Silver") ||
+      sym.includes("Oil") ||
+      sym.includes("Gas") ||
+      sym.includes("Copper") ||
+      sym.includes("Platinum") ||
+      sym.includes("Palladium")
+    )
+      return "commodities";
+    // Stock: ends with "." or contains a dot (e.g. "ADS.DE.")
+    if (sym.includes(".")) return "stocks";
+  }
+
+  // Pair-based classification
+  const pairBase = sym.split("/")[0];
+  if (CRYPTO_BASES.includes(pairBase)) return "crypto";
+  if (FOREX_PAIRS.includes(pairBase)) return "forex";
+  if (COMMODITIES.includes(pairBase)) return "commodities";
+
+  return "other";
+}
+
 function formatVolume(usd: number): string {
   if (usd >= 1_000_000_000) return `$${(usd / 1_000_000_000).toFixed(2)}B`;
   if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(2)}M`;
@@ -113,6 +282,16 @@ function parseTickerRow(item: Record<string, unknown>): TickerRow | null {
   };
 }
 
+const FILTER_TABS: { key: AssetCategory; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "crypto", label: "Crypto" },
+  { key: "forex", label: "Forex" },
+  { key: "stocks", label: "Stocks" },
+  { key: "indexes", label: "Indexes" },
+  { key: "commodities", label: "Commodities" },
+  { key: "other", label: "Other" },
+];
+
 export function VolumeTable() {
   const [rows, setRows] = useState<TickerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,6 +299,7 @@ export function VolumeTable() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("quoteVolume");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [assetFilter, setAssetFilter] = useState<AssetCategory>("all");
   const isMountedRef = useRef(true);
 
   const fetchTickers = useCallback(async (showRefreshing = false) => {
@@ -163,7 +343,24 @@ export function VolumeTable() {
     }
   }
 
-  const sorted = [...rows].sort((a, b) => {
+  // Compute per-category counts from the full rows array
+  const categoryCounts = {
+    all: rows.length,
+    crypto: rows.filter((r) => classifyAsset(r) === "crypto").length,
+    forex: rows.filter((r) => classifyAsset(r) === "forex").length,
+    stocks: rows.filter((r) => classifyAsset(r) === "stocks").length,
+    indexes: rows.filter((r) => classifyAsset(r) === "indexes").length,
+    commodities: rows.filter((r) => classifyAsset(r) === "commodities").length,
+    other: rows.filter((r) => classifyAsset(r) === "other").length,
+  };
+
+  // Filter first, then sort
+  const filtered =
+    assetFilter === "all"
+      ? rows
+      : rows.filter((r) => classifyAsset(r) === assetFilter);
+
+  const sorted = [...filtered].sort((a, b) => {
     const av = a[sortKey];
     const bv = b[sortKey];
     if (typeof av === "string" && typeof bv === "string") {
@@ -173,6 +370,18 @@ export function VolumeTable() {
     const bn = bv as number;
     return sortDir === "asc" ? an - bn : bn - an;
   });
+
+  // If current filter is "other" but it now has 0 items, fall back to "all"
+  // (handles the case where the user had "other" selected and it empties)
+  const effectiveFilter =
+    assetFilter === "other" && categoryCounts.other === 0 ? "all" : assetFilter;
+
+  // Only show the "Other" tab if it has assets
+  const visibleTabs = loading
+    ? FILTER_TABS
+    : FILTER_TABS.filter(
+        (tab) => tab.key !== "other" || categoryCounts.other > 0,
+      );
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col)
@@ -224,76 +433,146 @@ export function VolumeTable() {
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-4"
+        className="px-5 py-4"
         style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
       >
-        <div>
-          <h2
-            className="text-base font-semibold"
-            style={{ color: "oklch(0.910 0.015 240)" }}
-          >
-            All Dzengi Assets
-          </h2>
-          {lastUpdated && (
-            <p
-              className="text-[11px] mt-0.5"
-              style={{ color: "oklch(0.500 0.015 240)" }}
+        {/* Top row: title + status badges */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2
+              className="text-base font-semibold"
+              style={{ color: "oklch(0.910 0.015 240)" }}
             >
-              Last updated: {lastUpdated.toLocaleTimeString()}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {refreshing && (
-            <RefreshCw
-              className="w-3.5 h-3.5 animate-spin"
-              style={{ color: "oklch(0.785 0.135 200)" }}
-            />
-          )}
-          {!loading && (
-            <span
-              className="text-[11px] font-mono px-2 py-0.5 rounded-full"
-              style={{
-                background: "oklch(0.785 0.135 200 / 0.10)",
-                color: "oklch(0.785 0.135 200)",
-                border: "1px solid oklch(0.785 0.135 200 / 0.25)",
-              }}
-            >
-              {rows.length} pairs
-            </span>
-          )}
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-            style={{
-              background: loading
-                ? "oklch(0.85 0.18 85 / 0.12)"
-                : "oklch(0.723 0.185 150 / 0.12)",
-              border: `1px solid ${
-                loading
-                  ? "oklch(0.85 0.18 85 / 0.3)"
-                  : "oklch(0.723 0.185 150 / 0.3)"
-              }`,
-            }}
-          >
-            <Wifi
-              className="w-3 h-3"
-              style={{
-                color: loading
-                  ? "oklch(0.85 0.18 85)"
-                  : "oklch(0.723 0.185 150)",
-              }}
-            />
-            <span
-              className="text-[10px] font-semibold uppercase tracking-wider"
-              style={{
-                color: loading
-                  ? "oklch(0.85 0.18 85)"
-                  : "oklch(0.723 0.185 150)",
-              }}
-            >
-              {loading ? "LOADING" : "LIVE"}
-            </span>
+              All Dzengi Assets
+            </h2>
+            {lastUpdated && (
+              <p
+                className="text-[11px] mt-0.5"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </p>
+            )}
           </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {refreshing && (
+              <RefreshCw
+                className="w-3.5 h-3.5 animate-spin"
+                style={{ color: "oklch(0.785 0.135 200)" }}
+              />
+            )}
+            {!loading && (
+              <span
+                className="text-[11px] font-mono px-2 py-0.5 rounded-full"
+                style={{
+                  background: "oklch(0.785 0.135 200 / 0.10)",
+                  color: "oklch(0.785 0.135 200)",
+                  border: "1px solid oklch(0.785 0.135 200 / 0.25)",
+                }}
+              >
+                {effectiveFilter === "all"
+                  ? `${rows.length} pairs`
+                  : `${sorted.length} / ${rows.length} pairs`}
+              </span>
+            )}
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+              style={{
+                background: loading
+                  ? "oklch(0.85 0.18 85 / 0.12)"
+                  : "oklch(0.723 0.185 150 / 0.12)",
+                border: `1px solid ${
+                  loading
+                    ? "oklch(0.85 0.18 85 / 0.3)"
+                    : "oklch(0.723 0.185 150 / 0.3)"
+                }`,
+              }}
+            >
+              <Wifi
+                className="w-3 h-3"
+                style={{
+                  color: loading
+                    ? "oklch(0.85 0.18 85)"
+                    : "oklch(0.723 0.185 150)",
+                }}
+              />
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{
+                  color: loading
+                    ? "oklch(0.85 0.18 85)"
+                    : "oklch(0.723 0.185 150)",
+                }}
+              >
+                {loading ? "LOADING" : "LIVE"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter tabs row */}
+        <div
+          className="flex flex-wrap items-center gap-1.5 mt-3"
+          data-ocid="volume.filter.tab"
+        >
+          {visibleTabs.map((tab) => {
+            const isActive = effectiveFilter === tab.key;
+            const count = categoryCounts[tab.key];
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setAssetFilter(tab.key)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none"
+                style={{
+                  background: isActive
+                    ? "oklch(0.785 0.135 200 / 0.15)"
+                    : "oklch(1 0 0 / 0.04)",
+                  border: isActive
+                    ? "1px solid oklch(0.785 0.135 200 / 0.55)"
+                    : "1px solid oklch(1 0 0 / 0.08)",
+                  color: isActive
+                    ? "oklch(0.785 0.135 200)"
+                    : "oklch(0.550 0.015 240)",
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "oklch(1 0 0 / 0.07)";
+                    (e.currentTarget as HTMLButtonElement).style.color =
+                      "oklch(0.720 0.015 240)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "oklch(1 0 0 / 0.04)";
+                    (e.currentTarget as HTMLButtonElement).style.color =
+                      "oklch(0.550 0.015 240)";
+                  }
+                }}
+              >
+                <span>{tab.label}</span>
+                {!loading && (
+                  <span
+                    className="font-mono text-[10px] px-1 py-0 rounded"
+                    style={{
+                      background: isActive
+                        ? "oklch(0.785 0.135 200 / 0.20)"
+                        : "oklch(1 0 0 / 0.06)",
+                      color: isActive
+                        ? "oklch(0.785 0.135 200)"
+                        : "oklch(0.450 0.015 240)",
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -405,7 +684,7 @@ export function VolumeTable() {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })
-                            : "—"}
+                            : "\u2014"}
                         </span>
                       </TableCell>
 
@@ -437,7 +716,9 @@ export function VolumeTable() {
                           className="font-mono text-sm"
                           style={{ color: "oklch(0.700 0.015 240)" }}
                         >
-                          {row.volume > 0 ? formatBaseVolume(row.volume) : "—"}
+                          {row.volume > 0
+                            ? formatBaseVolume(row.volume)
+                            : "\u2014"}
                         </span>
                       </TableCell>
 
@@ -449,7 +730,7 @@ export function VolumeTable() {
                         >
                           {row.quoteVolume > 0
                             ? formatVolume(row.quoteVolume)
-                            : "—"}
+                            : "\u2014"}
                         </span>
                       </TableCell>
 
@@ -464,7 +745,7 @@ export function VolumeTable() {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })
-                            : "—"}
+                            : "\u2014"}
                         </span>
                       </TableCell>
 
@@ -479,7 +760,7 @@ export function VolumeTable() {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })
-                            : "—"}
+                            : "\u2014"}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -499,7 +780,7 @@ export function VolumeTable() {
             📊
           </span>
           <p className="text-sm" style={{ color: "oklch(0.500 0.015 240)" }}>
-            No market data available
+            No assets found in this category
           </p>
         </div>
       )}
