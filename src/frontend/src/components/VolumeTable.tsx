@@ -298,6 +298,92 @@ const FILTER_TABS: { key: AssetCategory; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
+/**
+ * Parse the Dzengi tradingHours string and determine if the market is
+ * currently open at the given UTC time. Returns the computed status:
+ * - "TRADING" if inside a trading window
+ * - "BREAK" if outside all windows (closed / weekend / break)
+ * Falls back to apiStatus if the schedule cannot be parsed.
+ */
+function computeStatusFromSchedule(
+  tradingHours: string | undefined,
+  apiStatus: string,
+): "TRADING" | "BREAK" | "HALT" {
+  if (apiStatus === "HALT") return "HALT";
+  if (!tradingHours) return apiStatus as "TRADING" | "BREAK" | "HALT";
+
+  // Parse UTC time
+  const now = new Date();
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const todayName = dayNames[now.getUTCDay()];
+  const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+  // Parse schedule string
+  // Format: "UTC; Day [time] - [time], [time] -; Day ..."
+  // We split by "; " to get each day's segment
+  const segments = tradingHours
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // First segment is "UTC" timezone indicator
+  const daySegments = segments.slice(1);
+
+  // Find today's segment(s)
+  const todaySegments = daySegments.filter(
+    (seg) => seg.startsWith(`${todayName} `) || seg.startsWith(`${todayName},`),
+  );
+
+  if (todaySegments.length === 0) {
+    // No entry for today = market closed today
+    return "BREAK";
+  }
+
+  // Parse time windows from today's segments
+  // Each segment like "Mon - 21:59:50, 22:05 -" or "Mon 09:00 - 21:00"
+  function parseMinutes(timeStr: string): number {
+    const parts = timeStr.trim().split(":");
+    return (
+      Number.parseInt(parts[0], 10) * 60 + Number.parseInt(parts[1] ?? "0", 10)
+    );
+  }
+
+  for (const seg of todaySegments) {
+    // Remove the day prefix
+    const rest = seg.replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*/, "").trim();
+    if (!rest) continue;
+
+    // Split by comma to get individual windows within the day
+    const windows = rest.split(",").map((w) => w.trim());
+
+    for (const win of windows) {
+      // Window formats:
+      // "HH:MM - HH:MM" = from start to end
+      // "- HH:MM"       = from midnight (00:00) to end
+      // "HH:MM -"       = from start to midnight (24:00 = 1440 min)
+      // "-"             = all day (should not happen but handle it)
+      const parts = win.split("-").map((p) => p.trim());
+
+      let startMin = 0;
+      let endMin = 1440;
+
+      if (parts.length === 2) {
+        startMin = parts[0] ? parseMinutes(parts[0]) : 0;
+        endMin = parts[1] ? parseMinutes(parts[1]) : 1440;
+      } else if (parts.length === 1 && parts[0]) {
+        // Whole day single time? Treat as open from that time
+        startMin = parseMinutes(parts[0]);
+        endMin = 1440;
+      }
+
+      if (nowMinutes >= startMin && nowMinutes < endMin) {
+        return "TRADING";
+      }
+    }
+  }
+
+  return "BREAK";
+}
+
 function StatusCell({ row }: { row: TickerRow }) {
   if (!row.status || row.status === "TRADING") {
     return (
@@ -384,7 +470,10 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
               return info
                 ? {
                     ...r,
-                    status: info.status as TickerRow["status"],
+                    status: computeStatusFromSchedule(
+                      info.tradingHours,
+                      info.status,
+                    ),
                     tradingHours: info.tradingHours,
                   }
                 : r;
@@ -412,7 +501,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
         return info
           ? {
               ...r,
-              status: info.status as TickerRow["status"],
+              status: computeStatusFromSchedule(info.tradingHours, info.status),
               tradingHours: info.tradingHours,
             }
           : r;
