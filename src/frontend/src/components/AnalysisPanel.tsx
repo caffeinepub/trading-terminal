@@ -416,6 +416,7 @@ interface FundingCardProps {
   asset: "BTC" | "ETH";
   rate: number;
   nextSettlement: number;
+  intervalHours: number;
   loading: boolean;
   error: boolean;
 }
@@ -424,6 +425,7 @@ function FundingCard({
   asset,
   rate,
   nextSettlement,
+  intervalHours,
   loading,
   error,
 }: FundingCardProps) {
@@ -521,6 +523,26 @@ function FundingCard({
             style={{ color: "oklch(0.720 0.015 240)" }}
           >
             {countdown || "\u2013"}
+          </span>
+        )}
+      </div>
+
+      <div
+        className="flex items-center gap-1.5 text-[11px]"
+        style={{ color: "oklch(0.500 0.015 240)" }}
+      >
+        <span className="uppercase tracking-wider text-[10px]">Interval</span>
+        {loading ? (
+          <Skeleton
+            className="h-3 w-10 rounded"
+            style={{ background: "oklch(1 0 0 / 0.06)" }}
+          />
+        ) : (
+          <span
+            className="font-mono"
+            style={{ color: "oklch(0.720 0.015 240)" }}
+          >
+            every {intervalHours}h
           </span>
         )}
       </div>
@@ -996,6 +1018,7 @@ export function AnalysisPanel() {
               asset="BTC"
               rate={data.btcFunding.rate}
               nextSettlement={data.btcFunding.nextSettlement}
+              intervalHours={data.btcFunding.intervalHours}
               loading={data.btcFunding.loading}
               error={data.btcFunding.error}
             />
@@ -1003,6 +1026,7 @@ export function AnalysisPanel() {
               asset="ETH"
               rate={data.ethFunding.rate}
               nextSettlement={data.ethFunding.nextSettlement}
+              intervalHours={data.ethFunding.intervalHours}
               loading={data.ethFunding.loading}
               error={data.ethFunding.error}
             />
@@ -1012,7 +1036,8 @@ export function AnalysisPanel() {
             style={{ color: "oklch(0.500 0.015 240)" }}
           >
             Positive funding = longs pay shorts (market overheated). Negative =
-            shorts pay longs (bearish bias). Rates reset every 8 hours.
+            shorts pay longs (bearish bias). Settlement intervals follow
+            exchange schedule.
           </p>
         </section>
 

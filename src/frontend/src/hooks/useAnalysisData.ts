@@ -12,6 +12,7 @@ export interface FearGreedState {
 export interface FundingState {
   rate: number;
   nextSettlement: number; // unix ms
+  intervalHours: number; // settlement interval in hours
   loading: boolean;
   error: boolean;
 }
@@ -65,6 +66,7 @@ const defaultFearGreed: FearGreedState = {
 const defaultFunding: FundingState = {
   rate: 0,
   nextSettlement: 0,
+  intervalHours: 8,
   loading: true,
   error: false,
 };
@@ -129,9 +131,14 @@ async function fetchFunding(instId: string): Promise<FundingState> {
   const json = await res.json();
   const item = json?.data?.[0];
   if (!item) throw new Error("funding empty");
+  const fundingTime = Number(item.fundingTime); // current period start
+  const nextFundingTime = Number(item.nextFundingTime); // next settlement
+  const intervalMs = nextFundingTime - fundingTime;
+  const intervalHours = Math.round(intervalMs / 3_600_000); // round to nearest hour
   return {
     rate: Number(item.fundingRate),
-    nextSettlement: Number(item.nextFundingTime),
+    nextSettlement: nextFundingTime,
+    intervalHours: intervalHours > 0 ? intervalHours : 8, // fallback to 8
     loading: false,
     error: false,
   };
