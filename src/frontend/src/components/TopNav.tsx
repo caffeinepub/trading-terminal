@@ -3,14 +3,27 @@ import { Input } from "@/components/ui/input";
 import { Bell, ChevronDown, Search } from "lucide-react";
 
 const NAV_LINKS = [
-  { label: "Dashboard", active: true },
-  { label: "Markets", active: false },
-  { label: "Analysis", active: false },
-  { label: "Tools", active: false },
-  { label: "Account", active: false },
+  { label: "Dashboard" },
+  { label: "Markets" },
+  { label: "Analysis" },
+  { label: "Tools" },
+  { label: "Volume" },
+  { label: "Account" },
 ];
 
-export function TopNav() {
+interface TopNavProps {
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  activeView: string;
+  onViewChange: (view: string) => void;
+}
+
+export function TopNav({
+  searchQuery,
+  onSearchChange,
+  activeView,
+  onViewChange,
+}: TopNavProps) {
   return (
     <header
       className="sticky top-0 z-50 w-full"
@@ -47,31 +60,35 @@ export function TopNav() {
           className="hidden md:flex items-center gap-1"
           aria-label="Main navigation"
         >
-          {NAV_LINKS.map((link) => (
-            <button
-              key={link.label}
-              type="button"
-              data-ocid="nav.link"
-              className="relative px-4 py-2 text-sm font-medium transition-colors rounded-lg"
-              style={{
-                color: link.active
-                  ? "oklch(0.910 0.015 240)"
-                  : "oklch(0.612 0.020 240)",
-                background: link.active ? "oklch(1 0 0 / 0.06)" : "transparent",
-              }}
-            >
-              {link.label}
-              {link.active && (
-                <span
-                  className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full"
-                  style={{
-                    background:
-                      "linear-gradient(90deg, oklch(0.785 0.135 200), oklch(0.620 0.170 260))",
-                  }}
-                />
-              )}
-            </button>
-          ))}
+          {NAV_LINKS.map((link) => {
+            const isActive = activeView === link.label;
+            return (
+              <button
+                key={link.label}
+                type="button"
+                data-ocid="nav.link"
+                onClick={() => onViewChange(link.label)}
+                className="relative px-4 py-2 text-sm font-medium transition-colors rounded-lg"
+                style={{
+                  color: isActive
+                    ? "oklch(0.910 0.015 240)"
+                    : "oklch(0.612 0.020 240)",
+                  background: isActive ? "oklch(1 0 0 / 0.06)" : "transparent",
+                }}
+              >
+                {link.label}
+                {isActive && (
+                  <span
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, oklch(0.785 0.135 200), oklch(0.620 0.170 260))",
+                    }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Spacer */}
@@ -86,6 +103,8 @@ export function TopNav() {
           <Input
             data-ocid="nav.search_input"
             placeholder="Search markets..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="w-56 pl-9 h-9 rounded-full text-sm"
             style={{
               background: "oklch(1 0 0 / 0.05)",

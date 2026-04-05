@@ -2,6 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
 import { TrendingDown, TrendingUp, Wifi } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AssetSymbol } from "../App";
 
 const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
 
@@ -12,9 +13,18 @@ interface MarketAsset {
   price: number;
   change24h: number;
   sparklineData: number[];
+  dzengiKey: AssetSymbol;
+  volume24h: number;
+  quoteVolume24h: number;
 }
 
-const ASSET_CONFIG = [
+const ASSET_CONFIG: {
+  id: string;
+  symbol: string;
+  name: string;
+  color: string;
+  dzengiKey: AssetSymbol;
+}[] = [
   {
     id: "bitcoin",
     symbol: "BTC",
@@ -90,18 +100,27 @@ function SparklineChart({
   );
 }
 
-export function MarketWatch() {
+interface MarketWatchProps {
+  selectedSymbol: AssetSymbol;
+  onSelectSymbol: (symbol: AssetSymbol) => void;
+  searchQuery: string;
+}
+
+export function MarketWatch({
+  selectedSymbol,
+  onSelectSymbol,
+  searchQuery,
+}: MarketWatchProps) {
   const [assets, setAssets] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const sparklineHistoryRef = useRef<Record<string, number[]>>({});
   const isMountedRef = useRef(true);
 
-  // Dzengi WebSocket feed
+  // Dzengi price feed
   const { prices, status: wsStatus } = useDzengiPriceFeed();
 
-  // Initial REST fetch to seed prices before WS connects
-  // GET /ticker/24hr returns an array of all symbols
+  // Initial REST fetch to seed prices
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch(`${DZENGI_MARKET_BASE}/ticker/24hr`);
@@ -110,6 +129,8 @@ export function MarketWatch() {
         symbol: string;
         lastPrice: string;
         priceChangePercent: string;
+        volume: string;
+        quoteVolume: string;
       }> = await res.json();
 
       if (!isMountedRef.current) return;
@@ -119,6 +140,10 @@ export function MarketWatch() {
         const price = entry ? Number.parseFloat(entry.lastPrice) : 0;
         const change24h = entry
           ? Number.parseFloat(entry.priceChangePercent)
+          : 0;
+        const volume24h = entry ? Number.parseFloat(entry.volume ?? "0") : 0;
+        const quoteVolume24h = entry
+          ? Number.parseFloat(entry.quoteVolume ?? "0")
           : 0;
         const hist = sparklineHistoryRef.current[cfg.id] ?? [];
         const newHist = [...hist, price].slice(-20);
@@ -130,6 +155,9 @@ export function MarketWatch() {
           price,
           change24h,
           sparklineData: newHist,
+          dzengiKey: cfg.dzengiKey,
+          volume24h,
+          quoteVolume24h,
         };
       });
       setAssets(updated);
@@ -149,12 +177,11 @@ export function MarketWatch() {
     };
   }, [fetchPrices]);
 
-  // Sync WS prices into assets state and sparkline history
+  // Sync feed prices into assets state
   useEffect(() => {
     if (!Object.keys(prices).length) return;
 
     setAssets((prev) => {
-      // If REST hasn't loaded yet, bootstrap from config
       const base: MarketAsset[] =
         prev.length > 0
           ? prev
@@ -165,6 +192,9 @@ export function MarketWatch() {
               price: 0,
               change24h: 0,
               sparklineData: [],
+              dzengiKey: cfg.dzengiKey,
+              volume24h: 0,
+              quoteVolume24h: 0,
             }));
 
       return base.map((asset) => {
@@ -173,7 +203,6 @@ export function MarketWatch() {
         const feed = prices[cfg.dzengiKey];
         if (!feed || feed.price <= 0) return asset;
 
-        // Append to sparkline history
         const hist = sparklineHistoryRef.current[asset.id] ?? [];
         const newHist = [...hist, feed.price].slice(-20);
         sparklineHistoryRef.current[asset.id] = newHist;
@@ -183,6 +212,8 @@ export function MarketWatch() {
           price: feed.price,
           change24h: feed.change24h,
           sparklineData: newHist,
+          volume24h: feed.volume24h ?? asset.volume24h,
+          quoteVolume24h: feed.quoteVolume24h ?? asset.quoteVolume24h,
         };
       });
     });
@@ -191,7 +222,16 @@ export function MarketWatch() {
     if (isMountedRef.current) setLoading(false);
   }, [prices]);
 
-  // Badge appearance based on WS status
+  // Filter assets by search query
+  const filteredAssets = searchQuery.trim()
+    ? assets.filter(
+        (a) =>
+          a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          a.name.toLowerCase().includes(searchQuery.toLowerCase()),
+      )
+    : assets;
+
+  // Badge appearance based on feed status
   const badgeColor =
     wsStatus === "connected" ? "oklch(0.723 0.185 150)" : "oklch(0.85 0.18 85)";
   const badgeBg =
@@ -265,16 +305,46 @@ export function MarketWatch() {
               />
             ))}
           </div>
+        ) : filteredAssets.length === 0 ? (
+          <div
+            className="flex items-center justify-center h-24 text-sm"
+            style={{ color: "oklch(0.500 0.015 240)" }}
+          >
+            No results for "{searchQuery}"
+          </div>
         ) : (
           <div className="space-y-1">
-            {assets.map((asset) => {
+            {filteredAssets.map((asset) => {
               const cfg = ASSET_CONFIG.find((c) => c.id === asset.id);
               const isPositive = asset.change24h >= 0;
+              const isSelected = selectedSymbol === asset.dzengiKey;
               return (
-                <div
+                <button
                   key={asset.id}
+                  type="button"
                   data-ocid="market.item.1"
-                  className="flex items-center gap-2 px-2 py-2.5 rounded-xl cursor-pointer transition-colors hover:bg-white/[0.03]"
+                  onClick={() => onSelectSymbol(asset.dzengiKey)}
+                  className="w-full flex items-center gap-2 px-2 py-2.5 rounded-xl cursor-pointer transition-colors text-left"
+                  style={{
+                    background: isSelected
+                      ? "oklch(0.785 0.135 200 / 0.08)"
+                      : "transparent",
+                    border: isSelected
+                      ? "1px solid oklch(0.785 0.135 200 / 0.2)"
+                      : "1px solid transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "oklch(1 0 0 / 0.03)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "transparent";
+                    }
+                  }}
                 >
                   {/* Icon */}
                   <div
@@ -288,7 +358,7 @@ export function MarketWatch() {
                     {asset.symbol[0]}
                   </div>
 
-                  {/* Name + price — flex-1 ensures it fills available space and truncates if needed */}
+                  {/* Name + price */}
                   <div className="flex-1 min-w-0 overflow-hidden">
                     <div className="flex items-center gap-1.5">
                       <span
@@ -316,7 +386,7 @@ export function MarketWatch() {
                     </div>
                   </div>
 
-                  {/* Right column: sparkline + change % stacked vertically — fixed width, never overlaps text */}
+                  {/* Right column: sparkline + change % */}
                   <div className="flex flex-col items-end gap-0.5 shrink-0">
                     <SparklineChart
                       data={asset.sparklineData}
@@ -345,44 +415,11 @@ export function MarketWatch() {
                       24h
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         )}
-      </div>
-
-      {/* Volume row */}
-      <div
-        className="px-5 py-3"
-        style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}
-      >
-        <div className="grid grid-cols-3 gap-2">
-          {["BTC", "ETH", "LTC"].map((sym) => (
-            <div key={sym} className="text-center">
-              <div
-                className="text-[10px] uppercase tracking-wider mb-1"
-                style={{ color: "oklch(0.500 0.015 240)" }}
-              >
-                {sym}
-              </div>
-              <div
-                className="h-1.5 rounded-full"
-                style={{
-                  background:
-                    "linear-gradient(90deg, oklch(0.785 0.135 200), oklch(0.620 0.170 260))",
-                  opacity: sym === "BTC" ? 1 : sym === "ETH" ? 0.6 : 0.35,
-                }}
-              />
-            </div>
-          ))}
-        </div>
-        <p
-          className="text-[10px] text-center mt-1.5"
-          style={{ color: "oklch(0.450 0.012 240)" }}
-        >
-          Relative Volume
-        </p>
       </div>
     </div>
   );

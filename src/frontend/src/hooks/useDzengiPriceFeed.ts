@@ -11,6 +11,8 @@ export interface AssetPrice {
   open: number;
   high: number;
   low: number;
+  volume24h: number; // base asset volume (e.g. BTC)
+  quoteVolume24h: number; // quote asset volume in USD
 }
 
 export type PriceFeedStatus = "connecting" | "connected" | "disconnected";
@@ -39,8 +41,18 @@ async function fetchTickersRest(): Promise<Record<string, AssetPrice>> {
     const high = Number.parseFloat(String(t.highPrice ?? "0"));
     const low = Number.parseFloat(String(t.lowPrice ?? "0"));
     const change24h = Number.parseFloat(String(t.priceChangePercent ?? "0"));
+    const volume24h = Number.parseFloat(String(t.volume ?? "0"));
+    const quoteVolume24h = Number.parseFloat(String(t.quoteVolume ?? "0"));
     if (price > 0) {
-      result[symbol] = { price, change24h, open, high, low };
+      result[symbol] = {
+        price,
+        change24h,
+        open,
+        high,
+        low,
+        volume24h,
+        quoteVolume24h,
+      };
     }
   }
   return result;

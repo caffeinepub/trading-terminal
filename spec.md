@@ -1,33 +1,32 @@
 # Trading Terminal
 
 ## Current State
-BtcChart and MarketWatch both use Binance WebSocket streams (`wss://stream.binance.com`) for real-time price ticks, while candle history is fetched from the Dzengi REST API. The live price connections have no relationship to the Dzengi platform.
+- TopNav has nav links: Dashboard, Markets, Analysis, Tools, Account
+- MarketWatch panel has a bottom section showing 24h Spot Volume with bars for BTC, ETH, LTC
+- The app only tracks 3 assets (BTC, ETH, LTC) in MarketWatch
+- Trades table is at the bottom of the page
 
 ## Requested Changes (Diff)
 
 ### Add
-- Dzengi WebSocket hook/utility that connects to `wss://demo-api-adapter.dzengi.com/connect`
-- Subscription to `OHLCMarketData.subscribe` for BTC/USD real-time price ticks via Dzengi WS
-- Subscription to market data streams for ETH/USD and XRP/USD in MarketWatch via Dzengi WS
-- Keepalive ping every 25 seconds to prevent the 30s timeout disconnect
-- Connection status badge showing CONNECTING / LIVE on the Dzengi WS
+- New "Volume" nav item in TopNav header (alongside Dashboard, Markets, etc.)
+- New full-page `VolumeTable` component that shows ALL assets traded on Dzengi, with columns: Symbol, Price, 24h Change %, 24h Volume (base), 24h Quote Volume (USD), High, Low
+- Clicking "Volume" nav item shows the VolumeTable section (togglable or inline below main grid)
+- Data sourced from Dzengi's `/api/v1/ticker/24hr` endpoint which returns ALL symbols
 
 ### Modify
-- BtcChart: replace Binance WS (`wss://stream.binance.com/ws/btcusdt@ticker`) with Dzengi WS stream for BTC/USD real-time price
-- MarketWatch: replace Binance combined WS stream with Dzengi WS subscriptions for BTC/USD, ETH/USD, XRP/USD
-- Both components: update source badge from Binance to Dzengi branding
+- Remove the "24h Spot Volume" bottom section from MarketWatch panel
+- TopNav: add "Volume" as a nav link; clicking it shows/hides the volume table section
 
 ### Remove
-- All references to `wss://stream.binance.com` in BtcChart and MarketWatch
+- 24h Spot Volume bars section at the bottom of MarketWatch
 
 ## Implementation Plan
-1. Create a shared `useDzengiWebSocket` hook in `src/hooks/useDzengiWebSocket.ts` that:
-   - Connects to `wss://demo-api-adapter.dzengi.com/connect`
-   - Sends subscription messages in the Dzengi WS format (destination + payload + correlationId)
-   - Subscribes to `OHLCMarketData.subscribe` endpoint for real-time price data
-   - Sends a keepalive ping every 25 seconds
-   - Exposes connection status and latest price data per symbol
-   - Auto-reconnects on disconnect (3s delay)
-2. Update BtcChart to use this hook for the live BTC/USD price
-3. Update MarketWatch to use this hook for BTC/USD, ETH/USD, XRP/USD live prices
-4. Validate build
+1. Update TopNav to accept an `activeView` prop and call `onViewChange` when nav links are clicked; add "Volume" to nav links
+2. Update App.tsx to manage `activeView` state; show VolumeTable section when "Volume" is active
+3. Remove volume bars section from MarketWatch.tsx
+4. Create new `VolumeTable.tsx` component that:
+   - Fetches all tickers from Dzengi `/api/v1/ticker/24hr`
+   - Displays a sortable table of all symbols with price, change, volume, high, low
+   - Auto-refreshes every 10 seconds
+   - Formats numbers nicely (compact volume, price precision)

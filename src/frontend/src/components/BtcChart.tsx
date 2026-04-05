@@ -2,6 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
 import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AssetSymbol } from "../App";
 
 const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
 
@@ -34,7 +35,11 @@ const DZENGI_INTERVAL: Record<Interval, string> = {
   "1d": "1d",
 };
 
-const BTC_SYMBOL = "BTC/USD_LEVERAGE";
+const SYMBOL_LABELS: Record<AssetSymbol, { label: string; ticker: string }> = {
+  "BTC/USD_LEVERAGE": { label: "BTC / USD", ticker: "BTC" },
+  "ETH/USD_LEVERAGE": { label: "ETH / USD", ticker: "ETH" },
+  "LTC/USD_LEVERAGE": { label: "LTC / USD", ticker: "LTC" },
+};
 
 const GREEN = "oklch(0.723 0.185 150)";
 const RED = "oklch(0.637 0.220 25)";
@@ -87,8 +92,8 @@ const CandlestickChart = memo(function CandlestickChart({
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
 
   // IDs for direct DOM patching of the last candle
-  const LAST_BODY_ID = "btc-last-body";
-  const LAST_WICK_ID = "btc-last-wick";
+  const LAST_BODY_ID = "chart-last-body";
+  const LAST_WICK_ID = "chart-last-wick";
 
   // Observe container size
   useEffect(() => {
@@ -261,7 +266,7 @@ const CandlestickChart = memo(function CandlestickChart({
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label="BTC/USD candlestick chart"
+        aria-label="Candlestick chart"
         style={{ display: "block" }}
       >
         {/* Grid lines */}
@@ -398,12 +403,14 @@ const CandlestickChart = memo(function CandlestickChart({
  * Re-renders on every price tick but is completely separate from the chart canvas.
  */
 const ChartPriceHeader = memo(function ChartPriceHeader({
+  symbol,
   seedPrice,
   seedChange,
   liveCloseRef,
   isLoading,
   onPriceUpdate,
 }: {
+  symbol: AssetSymbol;
   seedPrice: number;
   seedChange: number;
   liveCloseRef: React.RefObject<number>;
@@ -412,21 +419,22 @@ const ChartPriceHeader = memo(function ChartPriceHeader({
   onPriceUpdate: (price: number, change: number, open: number) => void;
 }) {
   const { prices } = useDzengiPriceFeed();
-  const btcFeed = prices[BTC_SYMBOL];
+  const feed = prices[symbol];
 
-  const currentPrice = btcFeed?.price ?? seedPrice;
-  const priceChangePercent = btcFeed?.change24h ?? seedChange;
-  const priceChange =
-    btcFeed && btcFeed.open > 0 ? btcFeed.price - btcFeed.open : 0;
+  const currentPrice = feed?.price ?? seedPrice;
+  const priceChangePercent = feed?.change24h ?? seedChange;
+  const priceChange = feed && feed.open > 0 ? feed.price - feed.open : 0;
   const isPositive = priceChangePercent >= 0;
+
+  const info = SYMBOL_LABELS[symbol];
 
   // Write live price into the ref (no setState — chart canvas reads via rAF)
   useEffect(() => {
     if (currentPrice > 0) {
       liveCloseRef.current = currentPrice;
-      onPriceUpdate(currentPrice, priceChangePercent, btcFeed?.open ?? 0);
+      onPriceUpdate(currentPrice, priceChangePercent, feed?.open ?? 0);
     }
-  }, [currentPrice, priceChangePercent, btcFeed, liveCloseRef, onPriceUpdate]);
+  }, [currentPrice, priceChangePercent, feed, liveCloseRef, onPriceUpdate]);
 
   return (
     <div>
@@ -435,7 +443,7 @@ const ChartPriceHeader = memo(function ChartPriceHeader({
           className="text-base font-semibold"
           style={{ color: "oklch(0.910 0.015 240)" }}
         >
-          BTC / USD
+          {info.label}
         </span>
         <span
           className="text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wider"
@@ -478,7 +486,11 @@ const ChartPriceHeader = memo(function ChartPriceHeader({
   );
 });
 
-export function BtcChart() {
+interface BtcChartProps {
+  symbol: AssetSymbol;
+}
+
+export function BtcChart({ symbol }: BtcChartProps) {
   const [selectedInterval, setSelectedInterval] = useState<Interval>("1h");
   const [klines, setKlines] = useState<KlineBar[]>([]);
   const [loading, setLoading] = useState(true);
@@ -503,17 +515,31 @@ export function BtcChart() {
     [],
   );
 
-  // Fetch current ticker price as seed (runs once on mount)
+  // Reset state when symbol changes (liveCloseRef is a ref — set directly outside effect)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: liveCloseRef is a ref, not reactive
+  useEffect(() => {
+    setKlines([]);
+    setLoading(true);
+    setSeedPrice(0);
+    setSeedChange(0);
+    liveCloseRef.current = 0;
+  }, [symbol]);
+
+  // Fetch current ticker price as seed (runs on symbol change)
   useEffect(() => {
     async function fetchSeedPrice() {
       try {
         const res = await fetch(
-          `${DZENGI_MARKET_BASE}/ticker/24hr?symbol=${encodeURIComponent(BTC_SYMBOL)}`,
+          `${DZENGI_MARKET_BASE}/ticker/24hr?symbol=${encodeURIComponent(symbol)}`,
         );
         if (!res.ok) return;
         const data = await res.json();
-        const p = Number.parseFloat(data.lastPrice ?? "0");
-        const pct = Number.parseFloat(data.priceChangePercent ?? "0");
+        // The endpoint may return an array or a single object depending on query
+        const entry = Array.isArray(data)
+          ? data.find((d: Record<string, unknown>) => d.symbol === symbol)
+          : data;
+        const p = Number.parseFloat(String(entry?.lastPrice ?? "0"));
+        const pct = Number.parseFloat(String(entry?.priceChangePercent ?? "0"));
         if (p > 0 && isMountedRef.current) {
           setSeedPrice(p);
           setSeedChange(pct);
@@ -524,58 +550,68 @@ export function BtcChart() {
       }
     }
     fetchSeedPrice();
-  }, []);
+  }, [symbol]);
 
-  const fetchKlines = useCallback(async (iv: Interval, showRefresh = false) => {
-    if (showRefresh) setRefreshing(true);
-    try {
-      const dzengiInterval = DZENGI_INTERVAL[iv];
-      const candlesRes = await fetch(
-        `${DZENGI_MARKET_BASE}/klines?symbol=${encodeURIComponent(BTC_SYMBOL)}&interval=${dzengiInterval}&limit=100`,
-      );
+  const fetchKlines = useCallback(
+    async (iv: Interval, showRefresh = false) => {
+      if (showRefresh) setRefreshing(true);
+      try {
+        const dzengiInterval = DZENGI_INTERVAL[iv];
+        const candlesRes = await fetch(
+          `${DZENGI_MARKET_BASE}/klines?symbol=${encodeURIComponent(symbol)}&interval=${dzengiInterval}&limit=100`,
+        );
 
-      if (candlesRes.ok) {
-        const raw: unknown = await candlesRes.json();
-        const items: [number, string, string, string, string, number][] =
-          Array.isArray(raw)
-            ? (raw as [number, string, string, string, string, number][])
-            : ((
-                raw as {
-                  results?: [number, string, string, string, string, number][];
-                }
-              ).results ?? []);
-        const bars: KlineBar[] = items.map((k) => {
-          const o = Number.parseFloat(k[1]);
-          const h = Number.parseFloat(k[2]);
-          const l = Number.parseFloat(k[3]);
-          const c = Number.parseFloat(k[4]);
-          const isGreen = c >= o;
-          return {
-            time: formatTime(k[0], iv),
-            open: o,
-            high: h,
-            low: l,
-            close: c,
-            isGreen,
-          };
-        });
-        if (isMountedRef.current) {
-          setKlines(bars);
-          if (bars.length > 0 && liveCloseRef.current <= 0) {
-            liveCloseRef.current = bars[bars.length - 1].close;
-            setSeedPrice(bars[bars.length - 1].close);
+        if (candlesRes.ok) {
+          const raw: unknown = await candlesRes.json();
+          const items: [number, string, string, string, string, number][] =
+            Array.isArray(raw)
+              ? (raw as [number, string, string, string, string, number][])
+              : ((
+                  raw as {
+                    results?: [
+                      number,
+                      string,
+                      string,
+                      string,
+                      string,
+                      number,
+                    ][];
+                  }
+                ).results ?? []);
+          const bars: KlineBar[] = items.map((k) => {
+            const o = Number.parseFloat(k[1]);
+            const h = Number.parseFloat(k[2]);
+            const l = Number.parseFloat(k[3]);
+            const c = Number.parseFloat(k[4]);
+            const isGreen = c >= o;
+            return {
+              time: formatTime(k[0], iv),
+              open: o,
+              high: h,
+              low: l,
+              close: c,
+              isGreen,
+            };
+          });
+          if (isMountedRef.current) {
+            setKlines(bars);
+            if (bars.length > 0 && liveCloseRef.current <= 0) {
+              liveCloseRef.current = bars[bars.length - 1].close;
+              setSeedPrice(bars[bars.length - 1].close);
+            }
           }
         }
+      } catch {
+        // Silently fail
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } catch {
-      // Silently fail
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, []);
+    },
+    [symbol],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -617,6 +653,7 @@ export function BtcChart() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           {/* Price header — re-renders on price tick, isolated from chart */}
           <ChartPriceHeader
+            symbol={symbol}
             seedPrice={seedPrice}
             seedChange={seedChange}
             liveCloseRef={liveCloseRef}
