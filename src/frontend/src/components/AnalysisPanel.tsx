@@ -105,12 +105,13 @@ interface GaugeProps {
 }
 
 function FearGreedGauge({ value, loading }: GaugeProps) {
-  // CoinMarketCap-style: 5 discrete colored arc segments, left=Extreme Fear (0), right=Extreme Greed (100)
-  // Matches CMC's exact SVG: center (65,61), radius 53, arc from 180° (left) to 0° (right)
+  // CoinMarketCap-style: 5 discrete colored arc segments
+  // left = Extreme Fear (0° = 180deg), right = Extreme Greed (100% = 0deg)
+  // Top-facing semicircle: center at bottom of SVG, arc goes upward
   const cx = 65;
-  const cy = 61;
-  const r = 53;
-  const GAP_DEG = 2.5; // gap between segments in degrees
+  const cy = 70; // bottom-center baseline
+  const r = 55;
+  const GAP_DEG = 2.5;
   const segSpan = (180 - 4 * GAP_DEG) / 5; // ~34° per segment
 
   const SEGMENTS = [
@@ -121,9 +122,10 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
     { color: "#16C784" }, // Extreme Greed (right, ~36°→0°)
   ];
 
+  // Y is negated so the arc faces upward (top semicircle)
   function polarToXY(angleDeg: number) {
     const rad = (angleDeg * Math.PI) / 180;
-    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+    return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
   }
 
   function arcPath(startAngle: number, endAngle: number) {
@@ -132,7 +134,7 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
     return `M ${p1.x.toFixed(4)} ${p1.y.toFixed(4)} A ${r} ${r} 0 0 0 ${p2.x.toFixed(4)} ${p2.y.toFixed(4)}`;
   }
 
-  // Needle: value 0 → 180° (left), value 100 → 0° (right)
+  // Needle: value 0 → 180° (far left), value 100 → 0° (far right)
   const needleAngle = 180 - (value / 100) * 180;
   const needlePt = polarToXY(needleAngle);
 
@@ -141,17 +143,16 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
       style={{
         position: "relative",
         width: 130,
-        height: 70,
+        height: 75,
         display: "flex",
         justifyContent: "center",
         alignItems: "flex-end",
       }}
     >
-      <svg width="130" height="70" viewBox="0 0 130 70" aria-hidden="true">
+      <svg width="130" height="75" viewBox="0 0 130 75" aria-hidden="true">
         {SEGMENTS.map((seg, i) => {
           // segment 0: 180° → (180° - segSpan)
-          // segment 1: (180° - segSpan - GAP) → (180° - 2*segSpan - GAP)
-          // etc.
+          // segment 1: (180° - segSpan - GAP) → ...
           const startAngle = 180 - i * (segSpan + GAP_DEG);
           const endAngle = startAngle - segSpan;
           return (
@@ -767,13 +768,13 @@ export function AnalysisPanel() {
               style={{
                 background: "oklch(0.145 0.018 240)",
                 border: "1px solid oklch(1 0 0 / 0.08)",
-                minWidth: "200px",
+                minWidth: "220px",
               }}
             >
               {fearGreed.loading ? (
                 <div className="flex flex-col items-center gap-4 py-4">
                   <Skeleton
-                    className="w-[130px] h-[70px] rounded-xl"
+                    className="w-[130px] h-[75px] rounded-xl"
                     style={{ background: "oklch(1 0 0 / 0.06)" }}
                   />
                   <Skeleton
@@ -790,10 +791,13 @@ export function AnalysisPanel() {
                 </div>
               ) : (
                 <>
-                  <FearGreedGauge
-                    value={fearGreed.value}
-                    loading={fearGreed.loading}
-                  />
+                  {/* Gauge SVG centered */}
+                  <div className="flex justify-center w-full">
+                    <FearGreedGauge
+                      value={fearGreed.value}
+                      loading={fearGreed.loading}
+                    />
+                  </div>
                   <div className="text-center mt-2">
                     <div
                       className="font-mono font-black text-5xl"
@@ -819,40 +823,63 @@ export function AnalysisPanel() {
                 </>
               )}
 
-              <div className="mt-5 w-full">
+              {/* Scale legend — color bar + labels, no overflow */}
+              <div className="mt-4 w-full">
                 <div
                   className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-center"
                   style={{ color: "oklch(0.500 0.015 240)" }}
                 >
                   Scale
                 </div>
-                <div className="flex justify-between gap-1">
-                  {[
-                    { label: "Extreme Fear", color: "oklch(0.637 0.220 25)" },
-                    { label: "Fear", color: "oklch(0.720 0.185 55)" },
-                    { label: "Neutral", color: "oklch(0.820 0.160 90)" },
-                    { label: "Greed", color: "oklch(0.780 0.185 145)" },
-                    {
-                      label: "Extreme Greed",
-                      color: "oklch(0.723 0.185 150)",
-                    },
-                  ].map((z) => (
-                    <div
-                      key={z.label}
-                      className="flex flex-col items-center gap-1 flex-1"
-                    >
-                      <div
-                        className="w-full h-1 rounded-full"
-                        style={{ background: z.color }}
-                      />
-                      <span
-                        className="text-[9px] text-center leading-tight"
-                        style={{ color: "oklch(0.450 0.015 240)" }}
-                      >
-                        {z.label}
-                      </span>
-                    </div>
-                  ))}
+                {/* Gradient color bar */}
+                <div
+                  className="h-2 rounded-full w-full"
+                  style={{
+                    background:
+                      "linear-gradient(90deg, #EA3943, #EA8C00, #F3D42F, #93D900, #16C784)",
+                  }}
+                />
+                {/* Zone labels — 3 anchors only to avoid overflow */}
+                <div className="flex justify-between mt-1.5">
+                  <span
+                    className="text-[9px] font-medium"
+                    style={{ color: "#EA3943" }}
+                  >
+                    Extreme Fear
+                  </span>
+                  <span
+                    className="text-[9px] font-medium"
+                    style={{ color: "#F3D42F" }}
+                  >
+                    Neutral
+                  </span>
+                  <span
+                    className="text-[9px] font-medium"
+                    style={{ color: "#16C784" }}
+                  >
+                    Extreme Greed
+                  </span>
+                </div>
+                {/* Numeric range */}
+                <div className="flex justify-between mt-0.5">
+                  <span
+                    className="text-[9px] font-mono"
+                    style={{ color: "oklch(0.450 0.015 240)" }}
+                  >
+                    0
+                  </span>
+                  <span
+                    className="text-[9px] font-mono"
+                    style={{ color: "oklch(0.450 0.015 240)" }}
+                  >
+                    50
+                  </span>
+                  <span
+                    className="text-[9px] font-mono"
+                    style={{ color: "oklch(0.450 0.015 240)" }}
+                  >
+                    100
+                  </span>
                 </div>
               </div>
             </div>
