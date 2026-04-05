@@ -105,132 +105,90 @@ interface GaugeProps {
 }
 
 function FearGreedGauge({ value, loading }: GaugeProps) {
-  const cx = 110;
-  const cy = 100;
-  const r = 80;
+  // CoinMarketCap-style: 5 discrete colored arc segments, left=Extreme Fear (0), right=Extreme Greed (100)
+  // Matches CMC's exact SVG: center (65,61), radius 53, arc from 180° (left) to 0° (right)
+  const cx = 65;
+  const cy = 61;
+  const r = 53;
+  const GAP_DEG = 2.5; // gap between segments in degrees
+  const segSpan = (180 - 4 * GAP_DEG) / 5; // ~34° per segment
 
-  function polarToXY(deg: number) {
-    const rad = (deg * Math.PI) / 180;
-    return {
-      x: cx + r * Math.cos(rad),
-      y: cy + r * Math.sin(rad),
-    };
-  }
-
-  const bgStart = polarToXY(180);
-  const bgEnd = polarToXY(0);
-  const bgPath = `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 0 1 ${bgEnd.x} ${bgEnd.y}`;
-
-  const valueDeg = 180 - (value / 100) * 180;
-  const valEnd = polarToXY(valueDeg);
-  const largeArc = value > 50 ? 1 : 0;
-  const valPath = `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 ${largeArc} 1 ${valEnd.x} ${valEnd.y}`;
-
-  const needleEnd = polarToXY(valueDeg);
-  const needleMid = {
-    x: cx + (r - 24) * Math.cos((valueDeg * Math.PI) / 180),
-    y: cy + (r - 24) * Math.sin((valueDeg * Math.PI) / 180),
-  };
-
-  const color = fngColor(value);
-
-  const zones = [
-    { from: 180, to: 144, color: "oklch(0.637 0.220 25 / 0.35)" },
-    { from: 144, to: 115, color: "oklch(0.720 0.185 55 / 0.30)" },
-    { from: 115, to: 90, color: "oklch(0.820 0.160 90 / 0.25)" },
-    { from: 90, to: 65, color: "oklch(0.780 0.185 145 / 0.25)" },
-    { from: 65, to: 36, color: "oklch(0.780 0.185 145 / 0.30)" },
-    { from: 36, to: 0, color: "oklch(0.723 0.185 150 / 0.35)" },
+  const SEGMENTS = [
+    { color: "#EA3943" }, // Extreme Fear  (left, 180°→~144°)
+    { color: "#EA8C00" }, // Fear
+    { color: "#F3D42F" }, // Neutral
+    { color: "#93D900" }, // Greed
+    { color: "#16C784" }, // Extreme Greed (right, ~36°→0°)
   ];
 
+  function polarToXY(angleDeg: number) {
+    const rad = (angleDeg * Math.PI) / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  }
+
+  function arcPath(startAngle: number, endAngle: number) {
+    const p1 = polarToXY(startAngle);
+    const p2 = polarToXY(endAngle);
+    return `M ${p1.x.toFixed(4)} ${p1.y.toFixed(4)} A ${r} ${r} 0 0 0 ${p2.x.toFixed(4)} ${p2.y.toFixed(4)}`;
+  }
+
+  // Needle: value 0 → 180° (left), value 100 → 0° (right)
+  const needleAngle = 180 - (value / 100) * 180;
+  const needlePt = polarToXY(needleAngle);
+
   return (
-    <svg
-      width="220"
-      height="120"
-      viewBox="0 0 220 120"
-      style={{ overflow: "visible" }}
-      aria-hidden="true"
+    <div
+      style={{
+        position: "relative",
+        width: 130,
+        height: 70,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-end",
+      }}
     >
-      {zones.map((z) => {
-        const zStart = polarToXY(z.from);
-        const zEnd = polarToXY(z.to);
-        const zSweep = z.from - z.to;
-        const zLarge = zSweep > 180 ? 1 : 0;
-        return (
-          <path
-            key={z.from}
-            d={`M ${zStart.x} ${zStart.y} A ${r} ${r} 0 ${zLarge} 1 ${zEnd.x} ${zEnd.y}`}
-            fill="none"
-            stroke={z.color}
-            strokeWidth="12"
-            strokeLinecap="butt"
-          />
-        );
-      })}
+      <svg width="130" height="70" viewBox="0 0 130 70" aria-hidden="true">
+        {SEGMENTS.map((seg, i) => {
+          // segment 0: 180° → (180° - segSpan)
+          // segment 1: (180° - segSpan - GAP) → (180° - 2*segSpan - GAP)
+          // etc.
+          const startAngle = 180 - i * (segSpan + GAP_DEG);
+          const endAngle = startAngle - segSpan;
+          return (
+            <path
+              key={seg.color}
+              d={arcPath(startAngle, endAngle)}
+              stroke={seg.color}
+              strokeWidth="6"
+              strokeLinecap="round"
+              fill="none"
+            />
+          );
+        })}
 
-      <path
-        d={bgPath}
-        fill="none"
-        stroke="oklch(1 0 0 / 0.06)"
-        strokeWidth="12"
-        strokeLinecap="round"
-      />
-
-      {!loading && value > 0 && (
-        <path
-          d={valPath}
-          fill="none"
-          stroke={color}
-          strokeWidth="12"
-          strokeLinecap="round"
-          style={{ filter: `drop-shadow(0 0 6px ${color})` }}
-        />
-      )}
-
-      {!loading && value > 0 && (
-        <>
-          <line
-            x1={cx}
-            y1={cy}
-            x2={needleMid.x}
-            y2={needleMid.y}
-            stroke={color}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
-          <circle
-            cx={needleEnd.x}
-            cy={needleEnd.y}
-            r="4"
-            fill={color}
-            style={{ filter: `drop-shadow(0 0 4px ${color})` }}
-          />
-          <circle cx={cx} cy={cy} r="5" fill={color} opacity="0.9" />
-        </>
-      )}
-
-      {[0, 25, 50, 75, 100].map((tick) => {
-        const deg = 180 - (tick / 100) * 180;
-        const labelR = r + 18;
-        const lp = {
-          x: cx + labelR * Math.cos((deg * Math.PI) / 180),
-          y: cy + labelR * Math.sin((deg * Math.PI) / 180),
-        };
-        return (
-          <text
-            key={tick}
-            x={lp.x}
-            y={lp.y}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize="9"
-            fill="oklch(0.500 0.015 240)"
-          >
-            {tick}
-          </text>
-        );
-      })}
-    </svg>
+        {/* Needle: white-ring + black-fill dot on the arc */}
+        {!loading && (
+          <>
+            <circle
+              cx={needlePt.x}
+              cy={needlePt.y}
+              r="6"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              style={{ transition: "all 0.6s cubic-bezier(0.4, 0, 0.2, 1)" }}
+            />
+            <circle
+              cx={needlePt.x}
+              cy={needlePt.y}
+              r="5"
+              fill="black"
+              style={{ transition: "all 0.6s cubic-bezier(0.4, 0, 0.2, 1)" }}
+            />
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -809,13 +767,13 @@ export function AnalysisPanel() {
               style={{
                 background: "oklch(0.145 0.018 240)",
                 border: "1px solid oklch(1 0 0 / 0.08)",
-                minWidth: "260px",
+                minWidth: "200px",
               }}
             >
               {fearGreed.loading ? (
                 <div className="flex flex-col items-center gap-4 py-4">
                   <Skeleton
-                    className="w-[220px] h-[120px] rounded-xl"
+                    className="w-[130px] h-[70px] rounded-xl"
                     style={{ background: "oklch(1 0 0 / 0.06)" }}
                   />
                   <Skeleton
