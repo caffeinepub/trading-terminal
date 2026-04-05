@@ -3,11 +3,8 @@ import {
   Activity,
   BarChart2,
   DollarSign,
-  MessageSquare,
   TrendingDown,
   TrendingUp,
-  Twitter,
-  Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type {
@@ -108,7 +105,6 @@ interface GaugeProps {
 }
 
 function FearGreedGauge({ value, loading }: GaugeProps) {
-  // cy=100 keeps arc bottom at y=100 with 20px margin in a 120px tall SVG
   const cx = 110;
   const cy = 100;
   const r = 80;
@@ -121,18 +117,15 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
     };
   }
 
-  // Background arc (full half: 180° to 0°)
   const bgStart = polarToXY(180);
   const bgEnd = polarToXY(0);
   const bgPath = `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 0 1 ${bgEnd.x} ${bgEnd.y}`;
 
-  // Value arc: 0 => 180°, 100 => 0° (mapped)
   const valueDeg = 180 - (value / 100) * 180;
   const valEnd = polarToXY(valueDeg);
   const largeArc = value > 50 ? 1 : 0;
   const valPath = `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 ${largeArc} 1 ${valEnd.x} ${valEnd.y}`;
 
-  // Needle position
   const needleEnd = polarToXY(valueDeg);
   const needleMid = {
     x: cx + (r - 24) * Math.cos((valueDeg * Math.PI) / 180),
@@ -141,7 +134,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
 
   const color = fngColor(value);
 
-  // Zone arc segments
   const zones = [
     { from: 180, to: 144, color: "oklch(0.637 0.220 25 / 0.35)" },
     { from: 144, to: 115, color: "oklch(0.720 0.185 55 / 0.30)" },
@@ -159,7 +151,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
       style={{ overflow: "visible" }}
       aria-hidden="true"
     >
-      {/* Zone background arcs */}
       {zones.map((z) => {
         const zStart = polarToXY(z.from);
         const zEnd = polarToXY(z.to);
@@ -177,7 +168,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
         );
       })}
 
-      {/* Background track */}
       <path
         d={bgPath}
         fill="none"
@@ -186,7 +176,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
         strokeLinecap="round"
       />
 
-      {/* Value arc */}
       {!loading && value > 0 && (
         <path
           d={valPath}
@@ -198,7 +187,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
         />
       )}
 
-      {/* Needle */}
       {!loading && value > 0 && (
         <>
           <line
@@ -221,7 +209,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
         </>
       )}
 
-      {/* Tick labels */}
       {[0, 25, 50, 75, 100].map((tick) => {
         const deg = 180 - (tick / 100) * 180;
         const labelR = r + 18;
@@ -309,6 +296,7 @@ interface MacroCardProps {
   suffix?: string;
   decimals?: number;
   icon: React.ReactNode;
+  show52wRange?: boolean;
 }
 
 function MacroCard({
@@ -319,6 +307,7 @@ function MacroCard({
   suffix = "",
   decimals = 2,
   icon,
+  show52wRange = true,
 }: MacroCardProps) {
   const change = calcChange(data.price, data.prevClose);
   const isPositive = change >= 0;
@@ -410,8 +399,8 @@ function MacroCard({
         </div>
       )}
 
-      {/* Range bar */}
-      {!data.loading && !data.error && data.high52w > 0 && (
+      {/* Range bar — only when show52wRange=true AND data has 52w values */}
+      {show52wRange && !data.loading && !data.error && data.high52w > 0 && (
         <RangeBar
           price={data.price}
           low52w={data.low52w}
@@ -440,13 +429,11 @@ function FundingCard({
 }: FundingCardProps) {
   const countdown = useCountdown(nextSettlement);
 
-  // Color logic
-  let rateColor = "oklch(0.550 0.015 240)"; // neutral
+  let rateColor = "oklch(0.550 0.015 240)";
   if (!loading && !error) {
     if (Math.abs(rate) < 0.00001) rateColor = "oklch(0.550 0.015 240)";
-    else if (rate > 0)
-      rateColor = "oklch(0.637 0.220 25)"; // red: longs pay (overheated)
-    else rateColor = "oklch(0.723 0.185 150)"; // green: shorts pay (bearish)
+    else if (rate > 0) rateColor = "oklch(0.637 0.220 25)";
+    else rateColor = "oklch(0.723 0.185 150)";
   }
 
   return (
@@ -495,7 +482,6 @@ function FundingCard({
         </span>
       </div>
 
-      {/* Rate value */}
       {loading ? (
         <Skeleton
           className="h-8 w-24 rounded"
@@ -517,7 +503,6 @@ function FundingCard({
         </div>
       )}
 
-      {/* Countdown */}
       <div
         className="flex items-center gap-1.5 text-[11px]"
         style={{ color: "oklch(0.500 0.015 240)" }}
@@ -567,7 +552,6 @@ function OISparkline({ data }: SparklineProps) {
 
   const polylinePoints = points.join(" ");
 
-  // Build the fill path: line forward, then close down and back
   const firstX = pad;
   const lastX = pad + (W - pad * 2);
   const fillPath = `M ${points[0]} L ${points.join(" L ")} L ${lastX},${H - pad} L ${firstX},${H - pad} Z`;
@@ -596,9 +580,7 @@ function OISparkline({ data }: SparklineProps) {
           />
         </linearGradient>
       </defs>
-      {/* Gradient fill */}
       <path d={fillPath} fill={`url(#${gradientId})`} />
-      {/* Trend line */}
       <polyline
         points={polylinePoints}
         fill="none"
@@ -626,7 +608,6 @@ function OICard({ asset, data }: OICardProps) {
         border: "1px solid oklch(1 0 0 / 0.08)",
       }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div
@@ -665,7 +646,6 @@ function OICard({ asset, data }: OICardProps) {
         </span>
       </div>
 
-      {/* USD value */}
       {data.loading ? (
         <Skeleton
           className="h-8 w-28 rounded"
@@ -687,7 +667,6 @@ function OICard({ asset, data }: OICardProps) {
         </div>
       )}
 
-      {/* Native coin amount */}
       {!data.loading && !data.error && (
         <div
           className="text-[11px] font-mono"
@@ -697,7 +676,6 @@ function OICard({ asset, data }: OICardProps) {
         </div>
       )}
 
-      {/* Sparkline */}
       {data.loading ? (
         <Skeleton
           className="h-12 w-full rounded"
@@ -709,70 +687,12 @@ function OICard({ asset, data }: OICardProps) {
         </div>
       ) : null}
 
-      {/* Label */}
       {!data.loading && (
         <div
           className="text-[10px] uppercase tracking-wider"
           style={{ color: "oklch(0.450 0.015 240)" }}
         >
           48h trend
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---- Social tile ----
-interface SocialTileProps {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  loading: boolean;
-  error: boolean;
-}
-
-function SocialTile({ icon, label, value, loading, error }: SocialTileProps) {
-  return (
-    <div
-      className="rounded-xl p-4 flex flex-col items-center gap-2 flex-1 min-w-0"
-      style={{
-        background: "oklch(0.155 0.020 240)",
-        border: "1px solid oklch(1 0 0 / 0.08)",
-      }}
-    >
-      <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center"
-        style={{
-          background: "oklch(0.785 0.135 200 / 0.10)",
-          color: "oklch(0.785 0.135 200)",
-        }}
-      >
-        {icon}
-      </div>
-      <div
-        className="text-[11px] text-center"
-        style={{ color: "oklch(0.500 0.015 240)" }}
-      >
-        {label}
-      </div>
-      {loading ? (
-        <Skeleton
-          className="h-6 w-16 rounded"
-          style={{ background: "oklch(1 0 0 / 0.06)" }}
-        />
-      ) : error ? (
-        <span
-          className="font-mono font-bold text-lg"
-          style={{ color: "oklch(0.450 0.015 240)" }}
-        >
-          {"\u2013"}
-        </span>
-      ) : (
-        <div
-          className="font-mono font-bold text-lg"
-          style={{ color: "oklch(0.910 0.015 240)" }}
-        >
-          {fmtCompact(value)}
         </div>
       )}
     </div>
@@ -1022,42 +942,45 @@ export function AnalysisPanel() {
           </div>
         </section>
 
-        {/* ===== Section 2: Macro Markets ===== */}
+        {/* ===== Section 2: Macro Markets (Dzengi) ===== */}
         <section data-ocid="analysis.section">
-          <SectionHeader title="Macro Markets" badge="Yahoo Finance" />
+          <SectionHeader title="Macro Markets" badge="Dzengi" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <MacroCard
               label="S&P 500"
-              ticker="^GSPC"
+              ticker="US500"
               data={data.spx}
               prefix=""
               decimals={2}
               icon={<BarChart2 className="w-3.5 h-3.5" />}
+              show52wRange={false}
             />
             <MacroCard
               label="Gold"
-              ticker="GC=F"
+              ticker="Gold"
               data={data.gold}
               prefix="$"
               decimals={2}
               icon={<DollarSign className="w-3.5 h-3.5" />}
+              show52wRange={false}
             />
             <MacroCard
-              label="US 10Y Yield"
-              ticker="^TNX"
+              label="US Bonds (TLT)"
+              ticker="TLT"
               data={data.us10y}
-              prefix=""
-              suffix="%"
+              prefix="$"
               decimals={2}
               icon={<TrendingUp className="w-3.5 h-3.5" />}
+              show52wRange={false}
             />
             <MacroCard
-              label="DXY (Dollar Index)"
-              ticker="DX-Y.NYB"
+              label="DXY Proxy"
+              ticker="USD/JPY"
               data={data.dxy}
               prefix=""
-              decimals={2}
+              decimals={3}
               icon={<Activity className="w-3.5 h-3.5" />}
+              show52wRange={false}
             />
           </div>
         </section>
@@ -1113,35 +1036,99 @@ export function AnalysisPanel() {
         {/* ===== Section 5: BTC Social Sentiment ===== */}
         <section data-ocid="analysis.section">
           <SectionHeader title="BTC Social Sentiment" badge="CoinGecko" />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <SocialTile
-              icon={<Twitter className="w-4 h-4" />}
-              label="Twitter Followers"
-              value={data.btcSocial.twitterFollowers}
-              loading={data.btcSocial.loading}
-              error={data.btcSocial.error}
-            />
-            <SocialTile
-              icon={<Users className="w-4 h-4" />}
-              label="Reddit Subscribers"
-              value={data.btcSocial.redditSubscribers}
-              loading={data.btcSocial.loading}
-              error={data.btcSocial.error}
-            />
-            <SocialTile
-              icon={<MessageSquare className="w-4 h-4" />}
-              label="Reddit Posts (48h avg)"
-              value={data.btcSocial.posts48h}
-              loading={data.btcSocial.loading}
-              error={data.btcSocial.error}
-            />
-            <SocialTile
-              icon={<MessageSquare className="w-4 h-4" />}
-              label="Reddit Comments (48h avg)"
-              value={data.btcSocial.comments48h}
-              loading={data.btcSocial.loading}
-              error={data.btcSocial.error}
-            />
+          <div
+            className="rounded-xl p-5"
+            style={{
+              background: "oklch(0.155 0.020 240)",
+              border: "1px solid oklch(1 0 0 / 0.08)",
+            }}
+          >
+            {data.btcSocial.loading ? (
+              <div className="space-y-3">
+                <Skeleton
+                  className="h-8 w-full rounded"
+                  style={{ background: "oklch(1 0 0 / 0.06)" }}
+                />
+                <Skeleton
+                  className="h-8 w-full rounded"
+                  style={{ background: "oklch(1 0 0 / 0.06)" }}
+                />
+              </div>
+            ) : data.btcSocial.error ? (
+              <span
+                className="text-sm"
+                style={{ color: "oklch(0.450 0.015 240)" }}
+              >
+                unavailable
+              </span>
+            ) : (
+              <div className="space-y-4">
+                {/* Bullish bar */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span
+                      style={{ color: "oklch(0.723 0.185 150)" }}
+                      className="font-semibold"
+                    >
+                      Bullish
+                    </span>
+                    <span
+                      className="font-mono font-bold"
+                      style={{ color: "oklch(0.723 0.185 150)" }}
+                    >
+                      {data.btcSocial.bullishPct.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div
+                    className="relative h-3 rounded-full"
+                    style={{ background: "oklch(1 0 0 / 0.07)" }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${data.btcSocial.bullishPct}%`,
+                        background: "oklch(0.723 0.185 150)",
+                      }}
+                    />
+                  </div>
+                </div>
+                {/* Bearish bar */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span
+                      style={{ color: "oklch(0.637 0.220 25)" }}
+                      className="font-semibold"
+                    >
+                      Bearish
+                    </span>
+                    <span
+                      className="font-mono font-bold"
+                      style={{ color: "oklch(0.637 0.220 25)" }}
+                    >
+                      {data.btcSocial.bearishPct.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div
+                    className="relative h-3 rounded-full"
+                    style={{ background: "oklch(1 0 0 / 0.07)" }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${data.btcSocial.bearishPct}%`,
+                        background: "oklch(0.637 0.220 25)",
+                      }}
+                    />
+                  </div>
+                </div>
+                <p
+                  className="text-[11px] italic mt-2"
+                  style={{ color: "oklch(0.500 0.015 240)" }}
+                >
+                  Based on CoinGecko community votes. Updated every 10 minutes.
+                </p>
+              </div>
+            )}
           </div>
         </section>
       </div>

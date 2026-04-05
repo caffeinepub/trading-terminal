@@ -26,10 +26,8 @@ export interface MacroAssetState {
 }
 
 export interface BtcSocialState {
-  twitterFollowers: number;
-  redditSubscribers: number;
-  posts48h: number;
-  comments48h: number;
+  bullishPct: number;
+  bearishPct: number;
   loading: boolean;
   error: boolean;
 }
@@ -37,7 +35,7 @@ export interface BtcSocialState {
 export interface OpenInterestState {
   oiUsd: number; // total OI in USD
   oiCcy: number; // OI in native coin (BTC or ETH)
-  history: number[]; // last 48h OI USD values, oldest→newest for sparkline
+  history: number[]; // last 48h OI USD values, oldest->newest for sparkline
   loading: boolean;
   error: boolean;
 }
@@ -81,10 +79,8 @@ const defaultMacro: MacroAssetState = {
 };
 
 const defaultSocial: BtcSocialState = {
-  twitterFollowers: 0,
-  redditSubscribers: 0,
-  posts48h: 0,
-  comments48h: 0,
+  bullishPct: 0,
+  bearishPct: 0,
   loading: true,
   error: false,
 };
@@ -97,12 +93,11 @@ const defaultOI: OpenInterestState = {
   error: false,
 };
 
-// ---- CORS proxy helper ----
-// Yahoo Finance blocks direct browser requests; route through corsproxy.io
-const CORS_PROXY = "https://corsproxy.io/?url=";
+// ---- CORS proxy helper (allorigins.win) ----
+const ALLORIGINS = "https://api.allorigins.win/raw?url=";
 
 function proxied(url: string): string {
-  return `${CORS_PROXY}${encodeURIComponent(url)}`;
+  return `${ALLORIGINS}${encodeURIComponent(url)}`;
 }
 
 // ---- Fetch helpers (module-level) ----
@@ -122,16 +117,12 @@ async function fetchFearGreed(): Promise<FearGreedState> {
 }
 
 async function fetchFunding(instId: string): Promise<FundingState> {
-  // Try OKX directly first; fall back to CORS proxy if needed
   const url = `https://www.okx.com/api/v5/public/funding-rate?instId=${instId}`;
   let res: Response;
   try {
     res = await fetch(url);
+    if (!res.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(url));
-  }
-  if (!res.ok) {
-    // Retry with proxy on non-OK response
     res = await fetch(proxied(url));
     if (!res.ok) throw new Error("funding");
   }
@@ -146,23 +137,43 @@ async function fetchFunding(instId: string): Promise<FundingState> {
   };
 }
 
-async function fetchYahooFinance(symbol: string): Promise<MacroAssetState> {
-  // Yahoo Finance v8 blocks direct browser CORS — use CORS proxy
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
-  const res = await fetch(proxied(yahooUrl), {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) throw new Error("yahoo");
-  const json = await res.json();
-  const meta = json?.chart?.result?.[0]?.meta;
-  if (!meta) throw new Error("yahoo meta missing");
+// ---- Dzengi macro data (replaces Yahoo Finance) ----
+// Cache the full ticker response to avoid N fetches for N macro symbols
+let dzengiTickerCache: Array<{
+  symbol: string;
+  lastPrice: string;
+  priceChange: string;
+  highPrice: string;
+  lowPrice: string;
+}> | null = null;
+let dzengiTickerCacheTime = 0;
+const DZENGI_TICKER_TTL = 60_000; // 1 min cache
+
+async function getDzengiTicker() {
+  const now = Date.now();
+  if (dzengiTickerCache && now - dzengiTickerCacheTime < DZENGI_TICKER_TTL) {
+    return dzengiTickerCache;
+  }
+  const res = await fetch(
+    "https://demo-api-adapter.dzengi.com/api/v1/ticker/24hr",
+  );
+  if (!res.ok) throw new Error("dzengi ticker");
+  dzengiTickerCache = await res.json();
+  dzengiTickerCacheTime = now;
+  return dzengiTickerCache!;
+}
+
+async function fetchDzengiMacro(symbol: string): Promise<MacroAssetState> {
+  const tickers = await getDzengiTicker();
+  const item = tickers.find((t) => t.symbol === symbol);
+  if (!item) throw new Error(`dzengi macro: ${symbol} not found`);
+  const price = Number(item.lastPrice);
+  const change = Number(item.priceChange);
   return {
-    price: Number(meta.regularMarketPrice ?? 0),
-    prevClose: Number(meta.chartPreviousClose ?? meta.previousClose ?? 0),
-    high52w: Number(meta.fiftyTwoWeekHigh ?? 0),
-    low52w: Number(meta.fiftyTwoWeekLow ?? 0),
+    price,
+    prevClose: price - change,
+    high52w: 0, // not available from Dzengi ticker
+    low52w: 0, // not available from Dzengi ticker
     loading: false,
     error: false,
   };
@@ -170,17 +181,13 @@ async function fetchYahooFinance(symbol: string): Promise<MacroAssetState> {
 
 async function fetchBtcSocial(): Promise<BtcSocialState> {
   const res = await fetch(
-    "https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=false&community_data=true&developer_data=false",
+    "https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
   );
   if (!res.ok) throw new Error("coingecko");
   const json = await res.json();
-  const cd = json?.community_data;
-  if (!cd) throw new Error("coingecko community");
   return {
-    twitterFollowers: Number(cd.twitter_followers ?? 0),
-    redditSubscribers: Number(cd.reddit_subscribers ?? 0),
-    posts48h: Number(cd.reddit_average_posts_48h ?? 0),
-    comments48h: Number(cd.reddit_average_comments_48h ?? 0),
+    bullishPct: Number(json.sentiment_votes_up_percentage ?? 0),
+    bearishPct: Number(json.sentiment_votes_down_percentage ?? 0),
     loading: false,
     error: false,
   };
@@ -193,10 +200,8 @@ async function fetchOpenInterest(
   let res: Response;
   try {
     res = await fetch(url);
+    if (!res.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(url));
-  }
-  if (!res.ok) {
     res = await fetch(proxied(url));
     if (!res.ok) throw new Error("oi");
   }
@@ -214,10 +219,8 @@ async function fetchOIHistory(ccy: string): Promise<number[]> {
   let res: Response;
   try {
     res = await fetch(url);
+    if (!res.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(url));
-  }
-  if (!res.ok) {
     res = await fetch(proxied(url));
     if (!res.ok) throw new Error("oi-history");
   }
@@ -247,7 +250,6 @@ async function fetchOIFull(
 }
 
 // ---- Module-level safe fetch helper ----
-// Uses a mounted ref and a setter callback to safely update state.
 function safeFetch<T>(
   fetcher: () => Promise<T>,
   mountedRef: React.RefObject<boolean>,
@@ -313,24 +315,26 @@ export function useAnalysisData(): AnalysisData {
     return () => clearInterval(id);
   }, [loadFunding]);
 
-  // -- Macro assets: poll every 5 min --
+  // -- Macro assets via Dzengi: poll every 5 min --
   const loadMacro = useCallback(() => {
-    safeFetch(() => fetchYahooFinance("%5EGSPC"), mountedRef, setSpx, {
+    // Invalidate the ticker cache so we get fresh data
+    dzengiTickerCache = null;
+    safeFetch(() => fetchDzengiMacro("US500."), mountedRef, setSpx, {
       ...defaultMacro,
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchYahooFinance("GC%3DF"), mountedRef, setGold, {
+    safeFetch(() => fetchDzengiMacro("Gold."), mountedRef, setGold, {
       ...defaultMacro,
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchYahooFinance("%5ETNX"), mountedRef, setUs10y, {
+    safeFetch(() => fetchDzengiMacro("TLT."), mountedRef, setUs10y, {
       ...defaultMacro,
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchYahooFinance("DX-Y.NYB"), mountedRef, setDxy, {
+    safeFetch(() => fetchDzengiMacro("USD/JPY_LEVERAGE"), mountedRef, setDxy, {
       ...defaultMacro,
       loading: false,
       error: true,
