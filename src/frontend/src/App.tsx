@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { AnalysisPanel } from "./components/AnalysisPanel";
 import { BtcChart } from "./components/BtcChart";
 import { Footer } from "./components/Footer";
 import { MarketWatch } from "./components/MarketWatch";
@@ -39,6 +40,8 @@ function App() {
   }, [tradesLoading, trades.length, seedTrades]);
 
   const isVolume = activeView === "Volume";
+  const isAnalysis = activeView === "Analysis";
+  const showMainGrid = !isVolume && !isAnalysis;
 
   return (
     <div className="min-h-screen flex flex-col" data-ocid="dashboard.page">
@@ -50,8 +53,8 @@ function App() {
       />
 
       <main className="flex-1 px-4 md:px-6 py-6 max-w-[1600px] mx-auto w-full">
-        {/* 3-column grid: hidden on Volume tab */}
-        {!isVolume && (
+        {/* 3-column grid: hidden on Volume and Analysis tabs */}
+        {showMainGrid && (
           <motion.div
             className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-4 mb-4"
             style={{ minHeight: "540px" }}
@@ -95,8 +98,17 @@ function App() {
           </motion.div>
         )}
 
-        {/* Bottom: Volume Table or Trades Table */}
-        {isVolume ? (
+        {/* Bottom section: Analysis / Volume / Trades */}
+        {isAnalysis ? (
+          <motion.div
+            key="analysis"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+          >
+            <AnalysisPanel />
+          </motion.div>
+        ) : isVolume ? (
           <motion.div
             key="volume"
             initial={{ opacity: 0, y: 16 }}
