@@ -427,7 +427,7 @@ function FundingCard({
               className="text-[10px]"
               style={{ color: "oklch(0.450 0.015 240)" }}
             >
-              {asset}-USDT-SWAP
+              {asset}USDT PERP
             </div>
           </div>
         </div>
@@ -439,7 +439,7 @@ function FundingCard({
             border: "1px solid oklch(0.785 0.135 200 / 0.25)",
           }}
         >
-          OKX
+          Binance
         </span>
       </div>
 
@@ -611,7 +611,7 @@ function OICard({ asset, data }: OICardProps) {
               className="text-[10px]"
               style={{ color: "oklch(0.450 0.015 240)" }}
             >
-              {asset}-USDT-SWAP
+              {asset}USDT PERP
             </div>
           </div>
         </div>
@@ -623,7 +623,7 @@ function OICard({ asset, data }: OICardProps) {
             border: "1px solid oklch(0.785 0.135 200 / 0.25)",
           }}
         >
-          OKX
+          Binance
         </span>
       </div>
 
@@ -951,7 +951,7 @@ export function AnalysisPanel() {
 
         {/* ===== Section 2: Macro Markets (Dzengi) ===== */}
         <section data-ocid="analysis.section">
-          <SectionHeader title="Macro Markets" badge="Dzengi" />
+          <SectionHeader title="Macro Markets" badge="Dzengi / Treasury" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <MacroCard
               label="S&P 500"
@@ -972,20 +972,21 @@ export function AnalysisPanel() {
               show52wRange={false}
             />
             <MacroCard
-              label="US Bonds (TLT)"
-              ticker="TLT"
+              label="US10Y Yield"
+              ticker="US10Y"
               data={data.us10y}
-              prefix="$"
+              prefix=""
+              suffix="%"
               decimals={2}
               icon={<TrendingUp className="w-3.5 h-3.5" />}
               show52wRange={false}
             />
             <MacroCard
-              label="DXY Proxy"
-              ticker="USD/JPY"
+              label="DXY"
+              ticker="DX-Y.NYB"
               data={data.dxy}
               prefix=""
-              decimals={3}
+              decimals={2}
               icon={<Activity className="w-3.5 h-3.5" />}
               show52wRange={false}
             />
@@ -996,7 +997,7 @@ export function AnalysisPanel() {
         <section data-ocid="analysis.section">
           <SectionHeader
             title={"Crypto Derivatives \u2014 Funding Rates"}
-            badge="OKX"
+            badge="Binance"
           />
           <div className="flex flex-col sm:flex-row gap-4">
             <FundingCard
@@ -1028,7 +1029,7 @@ export function AnalysisPanel() {
 
         {/* ===== Section 4: Open Interest ===== */}
         <section data-ocid="analysis.section">
-          <SectionHeader title="Open Interest" badge="OKX" />
+          <SectionHeader title="Open Interest" badge="Binance" />
           <div className="flex flex-col sm:flex-row gap-4">
             <OICard asset="BTC" data={data.btcOI} />
             <OICard asset="ETH" data={data.ethOI} />

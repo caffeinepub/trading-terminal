@@ -102,7 +102,11 @@ function proxied(url: string): string {
   return `${ALLORIGINS}${encodeURIComponent(url)}`;
 }
 
-// ---- Fetch helpers (module-level) ----
+// ---- Binance base URL ----
+const BINANCE_FAPI = "https://fapi.binance.com";
+const BINANCE_FUTURES_DATA = "https://fapi.binance.com";
+
+// ---- Fetch helpers ----
 async function fetchFearGreed(): Promise<FearGreedState> {
   const res = await fetch("https://api.alternative.me/fng/?limit=1");
   if (!res.ok) throw new Error("fng");
@@ -118,33 +122,54 @@ async function fetchFearGreed(): Promise<FearGreedState> {
   };
 }
 
-async function fetchFunding(instId: string): Promise<FundingState> {
-  const url = `https://www.okx.com/api/v5/public/funding-rate?instId=${instId}`;
+// ---- Binance funding rate ----
+// Fetch current funding rate + next settlement time from Binance
+async function fetchBinanceFunding(symbol: string): Promise<FundingState> {
+  // premiumIndex gives current funding rate and next funding time
+  const premiumUrl = `${BINANCE_FAPI}/fapi/v1/premiumIndex?symbol=${symbol}`;
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetch(premiumUrl);
     if (!res.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(url));
-    if (!res.ok) throw new Error("funding");
+    res = await fetch(proxied(premiumUrl));
+    if (!res.ok) throw new Error("binance funding");
   }
-  const json = await res.json();
-  const item = json?.data?.[0];
-  if (!item) throw new Error("funding empty");
-  const fundingTime = Number(item.fundingTime); // current period start
-  const nextFundingTime = Number(item.nextFundingTime); // next settlement
-  const intervalMs = nextFundingTime - fundingTime;
-  const intervalHours = Math.round(intervalMs / 3_600_000); // round to nearest hour
+  const item = await res.json();
+  if (!item || !item.symbol) throw new Error("binance funding empty");
+
+  // Get interval hours from fundingInfo endpoint
+  let intervalHours = 8;
+  try {
+    const infoUrl = `${BINANCE_FAPI}/fapi/v1/fundingInfo`;
+    let infoRes: Response;
+    try {
+      infoRes = await fetch(infoUrl);
+      if (!infoRes.ok) throw new Error();
+    } catch {
+      infoRes = await fetch(proxied(infoUrl));
+    }
+    if (infoRes.ok) {
+      const infoJson: Array<{ symbol: string; fundingIntervalHours: number }> =
+        await infoRes.json();
+      const entry = infoJson.find((x) => x.symbol === symbol);
+      if (entry?.fundingIntervalHours)
+        intervalHours = entry.fundingIntervalHours;
+    }
+  } catch {
+    // keep default 8h
+  }
+
   return {
-    rate: Number(item.fundingRate),
-    nextSettlement: nextFundingTime,
-    intervalHours: intervalHours > 0 ? intervalHours : 8, // fallback to 8
+    rate: Number(item.lastFundingRate),
+    nextSettlement: Number(item.nextFundingTime),
+    intervalHours,
     loading: false,
     error: false,
   };
 }
 
-// ---- Dzengi macro data (replaces Yahoo Finance) ----
+// ---- Dzengi macro data ----
 // Cache the full ticker response to avoid N fetches for N macro symbols
 let dzengiTickerCache: Array<{
   symbol: string;
@@ -179,8 +204,68 @@ async function fetchDzengiMacro(symbol: string): Promise<MacroAssetState> {
   return {
     price,
     prevClose: price - change,
-    high52w: 0, // not available from Dzengi ticker
-    low52w: 0, // not available from Dzengi ticker
+    high52w: 0,
+    low52w: 0,
+    loading: false,
+    error: false,
+  };
+}
+
+// ---- Real DXY (US Dollar Index) from Yahoo Finance via CORS proxy ----
+async function fetchDXY(): Promise<MacroAssetState> {
+  const yahooUrl =
+    "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=5d";
+  const res = await fetch(proxied(yahooUrl));
+  if (!res.ok) throw new Error("dxy yahoo");
+  const json = await res.json();
+  const meta = json?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error("dxy meta missing");
+  const price = Number(meta.regularMarketPrice);
+  const prevClose = Number(
+    meta.chartPreviousClose ?? meta.previousClose ?? price,
+  );
+  return {
+    price,
+    prevClose,
+    high52w: Number(meta.fiftyTwoWeekHigh ?? 0),
+    low52w: Number(meta.fiftyTwoWeekLow ?? 0),
+    loading: false,
+    error: false,
+  };
+}
+
+// ---- Real US 10Y Treasury yield from moneymatter.me Treasury API ----
+// Returns yield as a percentage (e.g. 4.35 means 4.35%)
+async function fetchUS10Y(): Promise<MacroAssetState> {
+  const url =
+    "https://moneymatter.me/api/treasury/interest-rates?lastDailyResult=true";
+  let res: Response;
+  try {
+    res = await fetch(url);
+    if (!res.ok) throw new Error();
+  } catch {
+    res = await fetch(proxied(url));
+    if (!res.ok) throw new Error("us10y");
+  }
+  const json = await res.json();
+  const item = json?.data?.[0];
+  if (!item) throw new Error("us10y empty");
+  const yield10y = Number(item.BC_10YEAR);
+  if (Number.isNaN(yield10y) || yield10y === 0)
+    throw new Error("us10y bad value");
+
+  // Fallback to previous entry for prevClose if available
+  let prevClose = yield10y;
+  if (json?.data?.length >= 2) {
+    const prev = Number(json.data[1]?.BC_10YEAR);
+    if (!Number.isNaN(prev) && prev > 0) prevClose = prev;
+  }
+
+  return {
+    price: yield10y,
+    prevClose,
+    high52w: 0,
+    low52w: 0,
     loading: false,
     error: false,
   };
@@ -200,52 +285,73 @@ async function fetchBtcSocial(): Promise<BtcSocialState> {
   };
 }
 
-async function fetchOpenInterest(
-  instId: string,
+// ---- Binance Open Interest (current) ----
+async function fetchBinanceOI(
+  symbol: string,
 ): Promise<{ oiUsd: number; oiCcy: number }> {
-  const url = `https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${instId}`;
-  let res: Response;
+  // Get current price to calculate USD value
+  const oiUrl = `${BINANCE_FAPI}/fapi/v1/openInterest?symbol=${symbol}`;
+  const priceUrl = `${BINANCE_FAPI}/fapi/v1/premiumIndex?symbol=${symbol}`;
+
+  let oiRes: Response;
   try {
-    res = await fetch(url);
-    if (!res.ok) throw new Error();
+    oiRes = await fetch(oiUrl);
+    if (!oiRes.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(url));
-    if (!res.ok) throw new Error("oi");
+    oiRes = await fetch(proxied(oiUrl));
+    if (!oiRes.ok) throw new Error("binance oi");
   }
-  const json = await res.json();
-  const item = json?.data?.[0];
-  if (!item) throw new Error("oi empty");
+  const oiJson = await oiRes.json();
+  const oiCcy = Number(oiJson.openInterest);
+  if (Number.isNaN(oiCcy)) throw new Error("binance oi bad");
+
+  // Get mark price to compute USD value
+  let markPrice = 0;
+  try {
+    let priceRes: Response;
+    try {
+      priceRes = await fetch(priceUrl);
+      if (!priceRes.ok) throw new Error();
+    } catch {
+      priceRes = await fetch(proxied(priceUrl));
+    }
+    if (priceRes.ok) {
+      const priceJson = await priceRes.json();
+      markPrice = Number(priceJson.markPrice ?? priceJson.indexPrice ?? 0);
+    }
+  } catch {
+    // will just show coin count without USD
+  }
+
   return {
-    oiUsd: Number(item.oiUsd),
-    oiCcy: Number(item.oiCcy),
+    oiCcy,
+    oiUsd: markPrice > 0 ? oiCcy * markPrice : 0,
   };
 }
 
-async function fetchOIHistory(ccy: string): Promise<number[]> {
-  const url = `https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-volume?ccy=${ccy}&period=1H`;
+// ---- Binance OI history (48 1h candles) ----
+async function fetchBinanceOIHistory(symbol: string): Promise<number[]> {
+  // openInterestHist is under fapi base but different path
+  const url = `${BINANCE_FUTURES_DATA}/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=48`;
   let res: Response;
   try {
     res = await fetch(url);
     if (!res.ok) throw new Error();
   } catch {
     res = await fetch(proxied(url));
-    if (!res.ok) throw new Error("oi-history");
+    if (!res.ok) throw new Error("binance oi history");
   }
-  const json = await res.json();
-  const rows: string[][] = json?.data ?? [];
-  // rows are newest-first: [timestamp, openInterestUsd, volumeUsd]
-  // take last 48 entries (oldest-first for sparkline)
-  const slice = rows.slice(0, 48).reverse();
-  return slice.map((row) => Number(row[1]));
+  const json: Array<{ sumOpenInterestValue: string; timestamp: number }> =
+    await res.json();
+  if (!Array.isArray(json)) throw new Error("binance oi history format");
+  // Already in ascending order (oldest first), take last 48
+  return json.slice(-48).map((row) => Number(row.sumOpenInterestValue));
 }
 
-async function fetchOIFull(
-  instId: string,
-  ccy: string,
-): Promise<OpenInterestState> {
+async function fetchBinanceOIFull(symbol: string): Promise<OpenInterestState> {
   const [spot, history] = await Promise.all([
-    fetchOpenInterest(instId),
-    fetchOIHistory(ccy),
+    fetchBinanceOI(symbol),
+    fetchBinanceOIHistory(symbol),
   ]);
   return {
     oiUsd: spot.oiUsd,
@@ -302,14 +408,14 @@ export function useAnalysisData(): AnalysisData {
     return () => clearInterval(id);
   }, [loadFearGreed]);
 
-  // -- Funding rates: poll every 60s --
+  // -- Funding rates (Binance): poll every 60s --
   const loadFunding = useCallback(() => {
-    safeFetch(() => fetchFunding("BTC-USDT-SWAP"), mountedRef, setBtcFunding, {
+    safeFetch(() => fetchBinanceFunding("BTCUSDT"), mountedRef, setBtcFunding, {
       ...defaultFunding,
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchFunding("ETH-USDT-SWAP"), mountedRef, setEthFunding, {
+    safeFetch(() => fetchBinanceFunding("ETHUSDT"), mountedRef, setEthFunding, {
       ...defaultFunding,
       loading: false,
       error: true,
@@ -322,7 +428,7 @@ export function useAnalysisData(): AnalysisData {
     return () => clearInterval(id);
   }, [loadFunding]);
 
-  // -- Macro assets via Dzengi: poll every 5 min --
+  // -- Macro assets: poll every 5 min --
   const loadMacro = useCallback(() => {
     // Invalidate the ticker cache so we get fresh data
     dzengiTickerCache = null;
@@ -336,12 +442,14 @@ export function useAnalysisData(): AnalysisData {
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchDzengiMacro("TLT."), mountedRef, setUs10y, {
+    // Real US 10Y yield from Treasury API
+    safeFetch(fetchUS10Y, mountedRef, setUs10y, {
       ...defaultMacro,
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchDzengiMacro("USD/JPY_LEVERAGE"), mountedRef, setDxy, {
+    // Real DXY (US Dollar Index) from Yahoo Finance
+    safeFetch(fetchDXY, mountedRef, setDxy, {
       ...defaultMacro,
       loading: false,
       error: true,
@@ -369,14 +477,14 @@ export function useAnalysisData(): AnalysisData {
     return () => clearInterval(id);
   }, [loadSocial]);
 
-  // -- Open Interest: poll every 60s --
+  // -- Open Interest (Binance): poll every 60s --
   const loadOI = useCallback(() => {
-    safeFetch(() => fetchOIFull("BTC-USDT-SWAP", "BTC"), mountedRef, setBtcOI, {
+    safeFetch(() => fetchBinanceOIFull("BTCUSDT"), mountedRef, setBtcOI, {
       ...defaultOI,
       loading: false,
       error: true,
     });
-    safeFetch(() => fetchOIFull("ETH-USDT-SWAP", "ETH"), mountedRef, setEthOI, {
+    safeFetch(() => fetchBinanceOIFull("ETHUSDT"), mountedRef, setEthOI, {
       ...defaultOI,
       loading: false,
       error: true,
