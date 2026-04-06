@@ -714,7 +714,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
         {/* Search + Filter tabs row */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3">
           {/* Search input */}
-          <div className="relative sm:w-56 shrink-0">
+          <div className="relative w-full sm:w-56 shrink-0">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
               style={{ color: "oklch(0.500 0.015 240)" }}
@@ -810,31 +810,39 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
                 borderBottom: "1px solid oklch(1 0 0 / 0.07)",
               }}
             >
+              {/* Symbol — always visible */}
               <TableHead className="pl-5 py-3 text-xs whitespace-nowrap">
                 {headerBtn("Symbol", "cleanSymbol")}
               </TableHead>
+              {/* Status — always visible */}
               <TableHead
                 className="py-3 text-xs whitespace-nowrap"
                 style={{ color: "oklch(0.500 0.015 240)", fontWeight: 500 }}
               >
                 Status
               </TableHead>
+              {/* Last Price — always visible */}
               <TableHead className="py-3 text-xs whitespace-nowrap">
                 {headerBtn("Last Price", "lastPrice")}
               </TableHead>
+              {/* 24h Change — always visible */}
               <TableHead className="py-3 text-xs whitespace-nowrap">
                 {headerBtn("24h Change", "priceChangePercent")}
               </TableHead>
-              <TableHead className="py-3 text-xs whitespace-nowrap">
+              {/* Volume (base) — hidden on mobile */}
+              <TableHead className="hidden sm:table-cell py-3 text-xs whitespace-nowrap">
                 {headerBtn("Volume", "volume")}
               </TableHead>
+              {/* Quote Volume — always visible */}
               <TableHead className="py-3 text-xs whitespace-nowrap">
                 {headerBtn("Quote Volume", "quoteVolume")}
               </TableHead>
-              <TableHead className="py-3 text-xs whitespace-nowrap">
+              {/* 24h High — hidden on small screens */}
+              <TableHead className="hidden md:table-cell py-3 text-xs whitespace-nowrap">
                 {headerBtn("24h High", "highPrice")}
               </TableHead>
-              <TableHead className="pr-5 py-3 text-xs whitespace-nowrap">
+              {/* 24h Low — hidden on small screens */}
+              <TableHead className="hidden md:table-cell pr-5 py-3 text-xs whitespace-nowrap">
                 {headerBtn("24h Low", "lowPrice")}
               </TableHead>
             </TableRow>
@@ -945,8 +953,8 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
                         </div>
                       </TableCell>
 
-                      {/* Volume (base) */}
-                      <TableCell className="py-3">
+                      {/* Volume (base) — hidden on mobile */}
+                      <TableCell className="hidden sm:table-cell py-3">
                         <span
                           className="font-mono text-sm"
                           style={{ color: "oklch(0.700 0.015 240)" }}
@@ -969,8 +977,8 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
                         </span>
                       </TableCell>
 
-                      {/* 24h High */}
-                      <TableCell className="py-3">
+                      {/* 24h High — hidden on small screens */}
+                      <TableCell className="hidden md:table-cell py-3">
                         <span
                           className="font-mono text-sm"
                           style={{ color: "oklch(0.723 0.185 150)" }}
@@ -984,8 +992,8 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
                         </span>
                       </TableCell>
 
-                      {/* 24h Low */}
-                      <TableCell className="pr-5 py-3">
+                      {/* 24h Low — hidden on small screens */}
+                      <TableCell className="hidden md:table-cell pr-5 py-3">
                         <span
                           className="font-mono text-sm"
                           style={{ color: "oklch(0.637 0.220 25)" }}

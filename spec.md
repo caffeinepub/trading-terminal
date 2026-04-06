@@ -1,53 +1,50 @@
 # Trading Terminal
 
 ## Current State
-The Analysis tab has 5 sections: Fear & Greed, Macro Markets, Funding Rates, Open Interest, BTC Social Sentiment.
 
-Problems:
-1. **Open Interest** -- OKX API has no CORS headers; proxy (corsproxy.io) stopped working, so OI shows "–".
-2. **Funding Rates** -- same OKX CORS issue; shows "–".
-3. **Macro Markets (S&P 500, Gold, US10Y, DXY)** -- uses Yahoo Finance via corsproxy.io; corsproxy.io changed API and now returns HTML instead of proxied content. All 4 show "unavailable".
-4. **BTC Social Sentiment** -- CoinGecko community_data returns all zeros (Reddit/Twitter data deprecated). Shows all zeros.
+A full trading terminal with these main pages/views:
+1. **Dashboard** (default) — 3-column grid: MarketWatch (left) + BtcChart (center) + TradingStatsPanel (right), then TradesTable below
+2. **Volume tab** — Full-width VolumeTable with category filter tabs, search, sortable columns
+3. **Analysis tab** — AnalysisPanel with Fear & Greed gauge, Macro Markets, Funding Rates, Open Interest, BTC Social Sentiment
+
+Header: TopNav with brand logo, nav links, search bar, bell icon, Trader dropdown.
+
+### Known responsiveness gaps
+- **TopNav**: Nav links hidden on mobile (`hidden md:flex`), no hamburger menu; search bar only on `lg:` screens; the brand name and full trader chip overflow on small screens
+- **App layout (App.tsx)**: 3-column grid with `grid-cols-1 lg:grid-cols-[280px_1fr_280px]` but MarketWatch stacks ABOVE chart on mobile which pushes chart far down; no way to collapse MarketWatch on mobile
+- **BtcChart**: Has `h-[440px] md:h-full` but interval buttons may overflow on very small screens
+- **MarketWatch**: No specific mobile layout issues but height is `h-full` which may be short when stacked
+- **VolumeTable**: `overflow-x-auto` wraps the table but 8 columns are too wide — on mobile many columns are hidden off-screen; category filter tabs can overflow on small screens
+- **AnalysisPanel**: Macro grid is `grid-cols-2 lg:grid-cols-4` (fine); Fear & Greed section is `flex-col lg:flex-row` (ok); Funding/OI sections are `flex-col sm:flex-row` (mostly ok). But overall panel padding is 24px which wastes space on mobile
+- **TradesTable**: 9 columns with no responsive handling — very wide on mobile
+- **TradingStats**: Not read yet, likely has fixed widths
 
 ## Requested Changes (Diff)
 
 ### Add
-- `allorigins.win/raw` proxy helper as the primary proxy for OKX endpoints (confirmed working for OKX OI and Funding).
-- Multiple proxy fallback: try direct → try `api.allorigins.win/raw` → error.
-- CoinGecko sentiment score from `sentiment_votes_up_percentage` + `sentiment_votes_down_percentage` for BTC.
-- A new `BtcSentimentScore` type with `bullishPct`, `bearishPct`, `loading`, `error`.
+- Mobile hamburger menu in TopNav for nav links (use a Sheet/drawer that slides in from left)
+- Mobile-friendly search that appears as icon-tap on small screens (or moves into a row below nav)
+- Tab navigation becomes horizontally scrollable on mobile in TopNav
+- On mobile Dashboard: show a collapsible/accordion for MarketWatch so it doesn't push chart far down; or show MarketWatch as a horizontal scrollable strip
+- VolumeTable mobile card layout OR hide less important columns (Volume, High, Low) on small screens
+- TradesTable: hide less critical columns (Quantity, Opened, MFE/MAE) on mobile; show only Type, Asset, Current Price, Status, P/L
 
 ### Modify
-- **Macro data source**: Replace Yahoo Finance completely. Use Dzengi's `/api/v1/ticker/24hr` (already CORS-enabled, no proxy needed):
-  - S&P 500 → `US500.` symbol
-  - Gold → `Gold.` symbol  
-  - DXY proxy → `USD/JPY_LEVERAGE` (most correlated DXY component, labeled "DXY Proxy (USD/JPY)")
-  - US10Y proxy → `TLT.` (20Y Treasury Bond ETF, inversely correlated, labeled "US Bonds (TLT)")
-  - Compute prevClose as `lastPrice - priceChange` from ticker data
-  - Use `highPrice`/`lowPrice` from the 24h window (no 52w range available, hide range bar for these)
-- **OKX proxy**: Replace corsproxy.io with `api.allorigins.win/raw` for all OKX calls (funding rate, OI spot, OI history).
-- **Social section**: Replace the 4-tile layout (Twitter/Reddit followers/posts/comments) with a 2-tile layout:
-  - BTC Bullish % (from CoinGecko sentiment_votes_up_percentage)
-  - BTC Bearish % (from CoinGecko sentiment_votes_down_percentage)
-  - Show as percentage gauges/progress bars with color coding (green/red)
-  - Keep section header as "BTC Social Sentiment" with badge "CoinGecko"
-- **AnalysisPanel**: Remove unused imports (Twitter, Users, MessageSquare) after social section restructure.
-- Update the `MacroCard` component to hide the 52w RangeBar when data comes from Dzengi (no 52w data), using a flag `show52wRange`.
-- Badge in Macro section header: change from "Yahoo Finance" to "Dzengi".
+- TopNav: brand area shrinks gracefully on mobile (hide full text "Trading Terminal" at xs, keep "T" logo only)
+- App.tsx main grid: on mobile, MarketWatch becomes a compact horizontal scrollable row of asset chips (not full panel), chart takes full width, stats hidden (accessible via scroll)
+- VolumeTable: filter tabs wrap properly; search + filters stacked on mobile
+- AnalysisPanel: reduce padding on mobile (`px-4 py-4` on mobile vs `px-6 py-6` on desktop); Fear & Greed section stacks properly; Macro grid stays 2-col on mobile
+- All section paddings tuned for mobile
 
 ### Remove
-- `fetchYahooFinance` function entirely.
-- `BtcSocialState` fields: `twitterFollowers`, `redditSubscribers`, `posts48h`, `comments48h`.
-- The CORS proxy constant `CORS_PROXY` pointing to corsproxy.io.
+- Nothing removed; only responsive adjustments
 
 ## Implementation Plan
-1. Update `useAnalysisData.ts`:
-   - Replace corsproxy.io with `allorigins.win/raw` proxy.
-   - Replace `fetchYahooFinance` with `fetchDzengiMacro` that reads from Dzengi ticker API.
-   - Update `BtcSocialState` to hold `bullishPct` and `bearishPct` only.
-   - Update `fetchBtcSocial` to use `sentiment_votes_up_percentage` from CoinGecko.
-2. Update `AnalysisPanel.tsx`:
-   - Update `MacroCard` to accept optional `show52wRange` prop.
-   - Change macro section badge from "Yahoo Finance" to "Dzengi".
-   - Rework BTC Social Sentiment section to show 2 sentiment bars instead of 4 tiles.
-   - Clean up unused imports.
+
+1. **TopNav.tsx** — Add mobile hamburger menu using shadcn Sheet; hide nav links below md, show Sheet with all nav links; make search visible on all sizes (compact icon-only on xs, full input on lg)
+2. **App.tsx** — On mobile: change dashboard grid to show MarketWatch as a compact horizontal asset selector strip; chart takes full column; TradingStats moves below chart; everything responsive
+3. **MarketWatch.tsx** — Add a compact horizontal "strip" mode that shows asset chips side-by-side on mobile (triggered by parent or media query)
+4. **BtcChart.tsx** — Ensure interval buttons wrap/scroll on small screens; price header layout adjusts for mobile
+5. **TradesTable.tsx** — Hide non-essential columns on mobile using `hidden sm:table-cell` or similar; ensure horizontal scroll fallback
+6. **VolumeTable.tsx** — Hide low-priority columns on mobile; ensure filter tabs scroll horizontally; search input full-width on mobile
+7. **AnalysisPanel.tsx** — Reduce padding on mobile; ensure all sections are properly stacked and readable on small screens

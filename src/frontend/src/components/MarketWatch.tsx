@@ -106,12 +106,14 @@ interface MarketWatchProps {
   selectedSymbol: AssetSymbol;
   onSelectSymbol: (symbol: AssetSymbol) => void;
   searchQuery: string;
+  compact?: boolean;
 }
 
 export function MarketWatch({
   selectedSymbol,
   onSelectSymbol,
   searchQuery,
+  compact = false,
 }: MarketWatchProps) {
   const [assets, setAssets] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -291,6 +293,110 @@ export function MarketWatch({
       : "oklch(0.85 0.18 85 / 0.3)";
   const badgeText = wsStatus === "connected" ? "LIVE" : "CONNECTING";
 
+  // ── Compact mode: horizontal strip of asset pill buttons ──────────────────
+  if (compact) {
+    return (
+      <div
+        className="rounded-xl px-3 py-2"
+        style={{
+          background:
+            "linear-gradient(145deg, oklch(0.155 0.020 240), oklch(0.148 0.018 240))",
+          border: "1px solid oklch(1 0 0 / 0.08)",
+        }}
+      >
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+          {/* Live badge */}
+          <div
+            className="flex items-center gap-1 px-2 py-1 rounded-full shrink-0"
+            style={{
+              background: badgeBg,
+              border: `1px solid ${badgeBorder}`,
+            }}
+          >
+            <Wifi className="w-2.5 h-2.5" style={{ color: badgeColor }} />
+            <span
+              className="text-[9px] font-semibold uppercase tracking-wider"
+              style={{ color: badgeColor }}
+            >
+              {badgeText}
+            </span>
+          </div>
+
+          {/* Asset pills */}
+          {loading
+            ? ["a", "b", "c"].map((k) => (
+                <Skeleton
+                  key={k}
+                  className="h-10 w-28 rounded-xl shrink-0"
+                  style={{ background: "oklch(1 0 0 / 0.05)" }}
+                />
+              ))
+            : filteredAssets.map((asset) => {
+                const cfg = ASSET_CONFIG.find((c) => c.id === asset.id);
+                const isPositive = asset.change24h >= 0;
+                const isSelected = selectedSymbol === asset.dzengiKey;
+                return (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    data-ocid="market.item.1"
+                    onClick={() => onSelectSymbol(asset.dzengiKey)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors shrink-0"
+                    style={{
+                      background: isSelected
+                        ? "oklch(0.785 0.135 200 / 0.10)"
+                        : "oklch(1 0 0 / 0.04)",
+                      border: isSelected
+                        ? "1px solid oklch(0.785 0.135 200 / 0.25)"
+                        : "1px solid oklch(1 0 0 / 0.07)",
+                    }}
+                  >
+                    {/* Color dot */}
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ background: cfg?.color ?? "#888" }}
+                    />
+                    {/* Symbol */}
+                    <span
+                      className="text-sm font-bold font-mono"
+                      style={{ color: "oklch(0.910 0.015 240)" }}
+                    >
+                      {asset.symbol}
+                    </span>
+                    {/* Price */}
+                    <span
+                      className="text-xs font-mono"
+                      style={{ color: "oklch(0.780 0.015 240)" }}
+                    >
+                      $
+                      {asset.price > 0
+                        ? asset.price.toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })
+                        : "--"}
+                    </span>
+                    {/* Change % */}
+                    <span
+                      className="text-[11px] font-semibold"
+                      style={{
+                        color: isPositive
+                          ? "oklch(0.723 0.185 150)"
+                          : "oklch(0.637 0.220 25)",
+                      }}
+                    >
+                      {isPositive ? "+" : ""}
+                      {asset.change24h.toFixed(2)}%
+                    </span>
+                  </button>
+                );
+              })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Full mode: existing vertical panel ────────────────────────────────────
   return (
     <div
       className="rounded-2xl flex flex-col h-full"

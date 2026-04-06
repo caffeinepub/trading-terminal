@@ -9,6 +9,7 @@ import { TopNav } from "./components/TopNav";
 import { TradesTable } from "./components/TradesTable";
 import { TradingStatsPanel } from "./components/TradingStats";
 import { VolumeTable } from "./components/VolumeTable";
+import { useIsMobile } from "./hooks/use-mobile";
 import {
   useGetAllTrades,
   useGetTradingStats,
@@ -25,6 +26,7 @@ function App() {
   const { data: stats, isLoading: statsLoading } = useGetTradingStats();
   const { mutate: seedTrades } = useSeedSampleTrades();
   const seededRef = useRef(false);
+  const isMobile = useIsMobile(1024); // lg breakpoint
 
   const [selectedSymbol, setSelectedSymbol] =
     useState<AssetSymbol>("BTC/USD_LEVERAGE");
@@ -52,49 +54,95 @@ function App() {
         onViewChange={setActiveView}
       />
 
-      <main className="flex-1 px-4 md:px-6 py-6 max-w-[1600px] mx-auto w-full">
+      <main className="flex-1 px-3 sm:px-4 md:px-6 py-4 md:py-6 max-w-[1600px] mx-auto w-full">
         {/* 3-column grid: hidden on Volume and Analysis tabs */}
         {showMainGrid && (
           <motion.div
-            className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-4 mb-4"
-            style={{ minHeight: "540px" }}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
+            className="mb-4"
           >
-            {/* Left: Market Watch */}
-            <motion.div
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.05, ease: "easeOut" }}
-              data-ocid="market.panel"
-            >
-              <MarketWatch
-                selectedSymbol={selectedSymbol}
-                onSelectSymbol={setSelectedSymbol}
-                searchQuery={searchQuery}
-              />
-            </motion.div>
+            {/* Mobile: compact asset strip + chart + stats stacked */}
+            {isMobile ? (
+              <div className="flex flex-col gap-4">
+                {/* 1. Compact asset selector strip */}
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.05, ease: "easeOut" }}
+                  data-ocid="market.panel"
+                >
+                  <MarketWatch
+                    compact
+                    selectedSymbol={selectedSymbol}
+                    onSelectSymbol={setSelectedSymbol}
+                    searchQuery={searchQuery}
+                  />
+                </motion.div>
 
-            {/* Center: Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
-              data-ocid="chart.panel"
-            >
-              <BtcChart symbol={selectedSymbol} />
-            </motion.div>
+                {/* 2. Chart full width */}
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+                  data-ocid="chart.panel"
+                  style={{ minHeight: "440px" }}
+                >
+                  <BtcChart symbol={selectedSymbol} />
+                </motion.div>
 
-            {/* Right: Trading Stats */}
-            <motion.div
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
-              data-ocid="stats.panel"
-            >
-              <TradingStatsPanel stats={stats} loading={statsLoading} />
-            </motion.div>
+                {/* 3. Trading Stats below chart */}
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
+                  data-ocid="stats.panel"
+                >
+                  <TradingStatsPanel stats={stats} loading={statsLoading} />
+                </motion.div>
+              </div>
+            ) : (
+              /* Desktop: 3-column grid */
+              <div
+                className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-4"
+                style={{ minHeight: "540px" }}
+              >
+                {/* Left: Market Watch */}
+                <motion.div
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 0.05, ease: "easeOut" }}
+                  data-ocid="market.panel"
+                >
+                  <MarketWatch
+                    selectedSymbol={selectedSymbol}
+                    onSelectSymbol={setSelectedSymbol}
+                    searchQuery={searchQuery}
+                  />
+                </motion.div>
+
+                {/* Center: Chart */}
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+                  data-ocid="chart.panel"
+                >
+                  <BtcChart symbol={selectedSymbol} />
+                </motion.div>
+
+                {/* Right: Trading Stats */}
+                <motion.div
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
+                  data-ocid="stats.panel"
+                >
+                  <TradingStatsPanel stats={stats} loading={statsLoading} />
+                </motion.div>
+              </div>
+            )}
           </motion.div>
         )}
 

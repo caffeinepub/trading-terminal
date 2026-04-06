@@ -57,7 +57,7 @@ export function TradesTable({ trades, loading }: Props) {
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-4"
+        className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-5 py-3 sm:py-4 gap-2"
         style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
       >
         <div className="flex items-center gap-3">
@@ -80,7 +80,7 @@ export function TradesTable({ trades, loading }: Props) {
           )}
         </div>
         <div
-          className="text-[11px] px-2.5 py-1 rounded-full"
+          className="text-[11px] px-2.5 py-1 rounded-full w-fit"
           style={{
             background: "oklch(1 0 0 / 0.05)",
             color: "oklch(0.500 0.015 240)",
@@ -100,25 +100,69 @@ export function TradesTable({ trades, loading }: Props) {
                 background: "transparent",
               }}
             >
-              {[
-                "Type",
-                "Asset",
-                "Quantity",
-                "Entry Price",
-                "Current Price",
-                "Opened",
-                "MFE / MAE",
-                "Status",
-                "P / L",
-              ].map((h) => (
-                <TableHead
-                  key={h}
-                  className="text-[11px] uppercase tracking-wider font-medium py-3"
-                  style={{ color: "oklch(0.500 0.015 240)" }}
-                >
-                  {h}
-                </TableHead>
-              ))}
+              {/* Type — always visible */}
+              <TableHead
+                className="text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Type
+              </TableHead>
+              {/* Asset — always visible */}
+              <TableHead
+                className="text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Asset
+              </TableHead>
+              {/* Quantity — hidden on mobile */}
+              <TableHead
+                className="hidden sm:table-cell text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Quantity
+              </TableHead>
+              {/* Entry Price — hidden on small screens */}
+              <TableHead
+                className="hidden md:table-cell text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Entry Price
+              </TableHead>
+              {/* Current Price — always visible */}
+              <TableHead
+                className="text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Current Price
+              </TableHead>
+              {/* Opened — hidden on mobile */}
+              <TableHead
+                className="hidden sm:table-cell text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Opened
+              </TableHead>
+              {/* MFE / MAE — hidden on small screens */}
+              <TableHead
+                className="hidden md:table-cell text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                MFE / MAE
+              </TableHead>
+              {/* Status — always visible */}
+              <TableHead
+                className="text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                Status
+              </TableHead>
+              {/* P/L — always visible */}
+              <TableHead
+                className="text-[11px] uppercase tracking-wider font-medium py-3"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                P / L
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -185,7 +229,7 @@ export function TradesTable({ trades, loading }: Props) {
                       ).style.background = "transparent";
                     }}
                   >
-                    {/* Type */}
+                    {/* Type — always visible */}
                     <TableCell className="py-3">
                       <div
                         className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg w-fit text-xs font-semibold"
@@ -207,7 +251,7 @@ export function TradesTable({ trades, loading }: Props) {
                       </div>
                     </TableCell>
 
-                    {/* Asset */}
+                    {/* Asset — always visible */}
                     <TableCell className="py-3">
                       <span
                         className="text-sm font-semibold"
@@ -217,8 +261,8 @@ export function TradesTable({ trades, loading }: Props) {
                       </span>
                     </TableCell>
 
-                    {/* Quantity */}
-                    <TableCell className="py-3">
+                    {/* Quantity — hidden on mobile */}
+                    <TableCell className="hidden sm:table-cell py-3">
                       <span
                         className="text-sm font-mono"
                         style={{ color: "oklch(0.750 0.015 240)" }}
@@ -227,8 +271,8 @@ export function TradesTable({ trades, loading }: Props) {
                       </span>
                     </TableCell>
 
-                    {/* Entry Price */}
-                    <TableCell className="py-3">
+                    {/* Entry Price — hidden on small screens */}
+                    <TableCell className="hidden md:table-cell py-3">
                       <span
                         className="text-sm font-mono"
                         style={{ color: "oklch(0.750 0.015 240)" }}
@@ -237,7 +281,7 @@ export function TradesTable({ trades, loading }: Props) {
                       </span>
                     </TableCell>
 
-                    {/* Current Price */}
+                    {/* Current Price — always visible */}
                     <TableCell className="py-3">
                       <span
                         className="text-sm font-mono font-semibold"
@@ -247,8 +291,8 @@ export function TradesTable({ trades, loading }: Props) {
                       </span>
                     </TableCell>
 
-                    {/* Opened */}
-                    <TableCell className="py-3">
+                    {/* Opened — hidden on mobile */}
+                    <TableCell className="hidden sm:table-cell py-3">
                       <span
                         className="text-xs"
                         style={{ color: "oklch(0.500 0.015 240)" }}
@@ -257,8 +301,8 @@ export function TradesTable({ trades, loading }: Props) {
                       </span>
                     </TableCell>
 
-                    {/* MFE / MAE */}
-                    <TableCell className="py-3">
+                    {/* MFE / MAE — hidden on small screens */}
+                    <TableCell className="hidden md:table-cell py-3">
                       <div className="text-xs font-mono">
                         <span style={{ color: "oklch(0.723 0.185 150)" }}>
                           +{trade.mfe.toFixed(2)}%
@@ -273,7 +317,7 @@ export function TradesTable({ trades, loading }: Props) {
                       </div>
                     </TableCell>
 
-                    {/* Status */}
+                    {/* Status — always visible */}
                     <TableCell className="py-3">
                       <div
                         className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold w-fit"
@@ -296,7 +340,7 @@ export function TradesTable({ trades, loading }: Props) {
                       </div>
                     </TableCell>
 
-                    {/* P/L */}
+                    {/* P/L — always visible */}
                     <TableCell className="py-3">
                       <div
                         className="flex items-center gap-1 text-sm font-bold font-mono"

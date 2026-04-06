@@ -274,7 +274,7 @@ function MacroCard({
 
   return (
     <div
-      className="rounded-xl p-4 flex flex-col gap-1 min-w-0"
+      className="rounded-xl p-3 sm:p-4 flex flex-col gap-1 min-w-0"
       style={{
         background: "oklch(0.155 0.020 240)",
         border: "1px solid oklch(1 0 0 / 0.08)",
@@ -284,7 +284,7 @@ function MacroCard({
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2">
           <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+            className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center shrink-0"
             style={{
               background: "oklch(0.785 0.135 200 / 0.12)",
               color: "oklch(0.785 0.135 200)",
@@ -294,13 +294,13 @@ function MacroCard({
           </div>
           <div className="min-w-0">
             <div
-              className="text-xs font-semibold"
+              className="text-xs font-semibold truncate"
               style={{ color: "oklch(0.910 0.015 240)" }}
             >
               {label}
             </div>
             <div
-              className="text-[10px] font-mono"
+              className="text-[10px] font-mono truncate"
               style={{ color: "oklch(0.450 0.015 240)" }}
             >
               {ticker}
@@ -309,7 +309,7 @@ function MacroCard({
         </div>
         {data.loading ? (
           <Skeleton
-            className="h-4 w-16 rounded"
+            className="h-4 w-12 sm:w-16 rounded"
             style={{ background: "oklch(1 0 0 / 0.06)" }}
           />
         ) : data.error ? (
@@ -337,19 +337,19 @@ function MacroCard({
       {/* Price */}
       {data.loading ? (
         <Skeleton
-          className="h-7 w-28 rounded mt-1"
+          className="h-7 w-24 sm:w-28 rounded mt-1"
           style={{ background: "oklch(1 0 0 / 0.06)" }}
         />
       ) : data.error ? (
         <span
-          className="text-lg font-mono font-bold"
+          className="text-base sm:text-lg font-mono font-bold"
           style={{ color: "oklch(0.450 0.015 240)" }}
         >
           unavailable
         </span>
       ) : (
         <div
-          className="font-mono font-bold text-xl mt-0.5"
+          className="font-mono font-bold text-lg sm:text-xl mt-0.5"
           style={{ color: "oklch(0.910 0.015 240)" }}
         >
           {prefix}
@@ -730,7 +730,7 @@ export function AnalysisPanel() {
     >
       {/* Panel header */}
       <div
-        className="px-6 py-4"
+        className="px-4 sm:px-6 py-4"
         style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
       >
         <div className="flex items-center gap-3">
@@ -757,14 +757,14 @@ export function AnalysisPanel() {
         </div>
       </div>
 
-      <div className="px-6 py-6 flex flex-col gap-10">
+      <div className="px-4 sm:px-6 py-4 sm:py-6 flex flex-col gap-8 md:gap-10">
         {/* ===== Section 1: Market Sentiment ===== */}
         <section data-ocid="analysis.section">
           <SectionHeader title="Market Sentiment" badge="alternative.me" />
-          <div className="flex flex-col lg:flex-row items-start gap-6">
-            {/* Gauge card */}
+          <div className="flex flex-col lg:flex-row items-start gap-4 sm:gap-6">
+            {/* Gauge card — full width on mobile, fixed width on desktop */}
             <div
-              className="rounded-xl p-5 flex flex-col items-center"
+              className="rounded-xl p-4 sm:p-5 flex flex-col items-center w-full lg:w-auto"
               style={{
                 background: "oklch(0.145 0.018 240)",
                 border: "1px solid oklch(1 0 0 / 0.08)",
@@ -885,9 +885,9 @@ export function AnalysisPanel() {
             </div>
 
             {/* Sentiment description */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 w-full lg:w-auto">
               <div
-                className="rounded-xl p-5 h-full"
+                className="rounded-xl p-4 sm:p-5 h-full"
                 style={{
                   background: "oklch(0.145 0.018 240)",
                   border: "1px solid oklch(1 0 0 / 0.08)",
@@ -952,7 +952,7 @@ export function AnalysisPanel() {
         {/* ===== Section 2: Macro Markets (Dzengi) ===== */}
         <section data-ocid="analysis.section">
           <SectionHeader title="Macro Markets" badge="Dzengi / Treasury" />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <MacroCard
               label="S&P 500"
               ticker="US500"
@@ -1048,7 +1048,7 @@ export function AnalysisPanel() {
         <section data-ocid="analysis.section">
           <SectionHeader title="BTC Social Sentiment" badge="CoinGecko" />
           <div
-            className="rounded-xl p-5"
+            className="rounded-xl p-4 sm:p-5"
             style={{
               background: "oklch(0.155 0.020 240)",
               border: "1px solid oklch(1 0 0 / 0.08)",
