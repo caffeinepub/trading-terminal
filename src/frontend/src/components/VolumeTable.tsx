@@ -537,8 +537,17 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
         .map((item) => parseTickerRow(item as Record<string, unknown>))
         .filter((r): r is TickerRow => r !== null);
 
+      // Deduplicate: remove dot-suffix variants when the non-dot version exists
+      // e.g. keep "Gold" but remove "Gold." if both are present
+      const noDotSet = new Set(
+        parsed.map((r) => r.symbol).filter((s) => !s.endsWith(".")),
+      );
+      const deduped = parsed.filter(
+        (r) => !r.symbol.endsWith(".") || !noDotSet.has(r.symbol.slice(0, -1)),
+      );
+
       // Merge status from exchangeInfo ref
-      const mergedRows = parsed.map((r) => {
+      const mergedRows = deduped.map((r) => {
         const info = exchangeInfoRef.current.get(r.symbol);
         return info
           ? {

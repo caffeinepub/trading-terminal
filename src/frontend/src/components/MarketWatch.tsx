@@ -1,10 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDzengiPriceFeed } from "@/hooks/useDzengiPriceFeed";
-import { Lock, TrendingDown, TrendingUp, Wifi } from "lucide-react";
+import { BarChart2, Lock, TrendingDown, TrendingUp, Wifi } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssetSymbol } from "../App";
 
 const DZENGI_MARKET_BASE = "https://api-adapter.dzengi.com/api/v1";
+const ALL_TICKERS_INTERVAL_MS = 10_000;
+
+// ── Type definitions ────────────────────────────────────────────────────────
 
 interface MarketAsset {
   id: string;
@@ -19,6 +22,24 @@ interface MarketAsset {
   status?: "TRADING" | "BREAK" | "HALT";
   tradingHours?: string;
 }
+
+interface TickerRow {
+  symbol: string;
+  cleanSymbol: string;
+  lastPrice: number;
+  priceChangePercent: number;
+  quoteVolume: number;
+}
+
+type AssetCategory =
+  | "all"
+  | "crypto"
+  | "forex"
+  | "stocks"
+  | "commodities"
+  | "indexes";
+
+// ── Chart-switchable assets ─────────────────────────────────────────────────
 
 const ASSET_CONFIG: {
   id: string;
@@ -49,6 +70,227 @@ const ASSET_CONFIG: {
     dzengiKey: "LTC/USD_LEVERAGE",
   },
 ];
+
+// Chart-switchable symbol lookup set
+const CHART_SYMBOLS = new Set(ASSET_CONFIG.map((c) => c.symbol));
+
+// ── Asset classification ────────────────────────────────────────────────────
+
+const CRYPTO_BASES = [
+  "BTC",
+  "ETH",
+  "LTC",
+  "XRP",
+  "BCH",
+  "ADA",
+  "SOL",
+  "DOT",
+  "LINK",
+  "BNB",
+  "DOGE",
+  "AVAX",
+  "MATIC",
+  "UNI",
+  "ATOM",
+  "ALGO",
+  "XLM",
+  "TRX",
+  "EOS",
+  "XMR",
+  "DASH",
+  "ZEC",
+  "NEO",
+  "VET",
+  "THETA",
+  "FIL",
+  "AAVE",
+  "COMP",
+  "MKR",
+  "SNX",
+  "YFI",
+  "SUSHI",
+  "CRV",
+  "BAL",
+  "1INCH",
+  "GRT",
+  "AXS",
+  "SAND",
+  "MANA",
+  "ENJ",
+  "CHZ",
+  "HOT",
+  "XEM",
+  "NANO",
+  "ZRX",
+  "BAT",
+  "OMG",
+  "LRC",
+  "KNC",
+  "REN",
+  "NMR",
+  "OXT",
+  "BAND",
+  "STORJ",
+  "KAVA",
+  "ANKR",
+  "CELR",
+  "FET",
+  "OCEAN",
+  "RLC",
+  "APE",
+  "BNT",
+  "CAKE",
+  "CELO",
+  "COTI",
+  "CVC",
+  "DAI",
+  "ETC",
+  "INJ",
+  "JASMY",
+  "LDO",
+  "MEW",
+  "PAXG",
+  "QNT",
+  "REP",
+  "RSR",
+  "RVN",
+  "SHIB",
+  "TON",
+  "TWT",
+  "UMA",
+  "USDC",
+  "USDT",
+];
+
+const FOREX_PAIRS = [
+  "EUR",
+  "GBP",
+  "JPY",
+  "AUD",
+  "CAD",
+  "CHF",
+  "NZD",
+  "SEK",
+  "NOK",
+  "DKK",
+  "HKD",
+  "SGD",
+  "MXN",
+  "PLN",
+  "HUF",
+  "CZK",
+  "TRY",
+  "ZAR",
+  "CNH",
+  "ILS",
+  "USD",
+];
+
+const COMMODITIES = [
+  "XAU",
+  "XAG",
+  "XPT",
+  "XPD",
+  "OIL",
+  "BRENT",
+  "WTI",
+  "GAS",
+  "WHEAT",
+  "CORN",
+  "SOYA",
+  "COFFEE",
+  "COCOA",
+  "SUGAR",
+  "COTTON",
+  "COPPER",
+  "ALUM",
+  "NICKEL",
+  "ZINC",
+  "LEAD",
+];
+
+const INDEX_SYMBOLS = new Set([
+  "US100",
+  "US500",
+  "US30",
+  "DE40",
+  "EU50",
+  "FR40",
+  "IT40",
+  "SP35",
+  "NL25",
+  "CN50",
+  "UK100",
+  "HK50",
+  "AU200",
+  "JP225",
+  "DXY",
+]);
+
+function classifyTicker(row: TickerRow): Exclude<AssetCategory, "all"> {
+  const sym = row.cleanSymbol;
+
+  if (!sym.includes("/")) {
+    const base = sym.endsWith(".") ? sym.slice(0, -1) : sym;
+    if (INDEX_SYMBOLS.has(base)) return "indexes";
+    if (
+      sym.includes("Gold") ||
+      sym.includes("Silver") ||
+      sym.includes("Oil") ||
+      sym.includes("Gas") ||
+      sym.includes("Copper") ||
+      sym.includes("Platinum") ||
+      sym.includes("Palladium") ||
+      sym.includes("Corn") ||
+      sym.includes("Soybean") ||
+      sym.includes("Lead") ||
+      sym.includes("Coffee") ||
+      sym.includes("Cotton") ||
+      sym.includes("Wheat") ||
+      sym.includes("Sugar") ||
+      sym.includes("Cocoa")
+    )
+      return "commodities";
+    if (sym.includes(".")) return "stocks";
+    if (CRYPTO_BASES.includes(sym)) return "crypto";
+    return "stocks";
+  }
+
+  const pairBase = sym.split("/")[0];
+  if (CRYPTO_BASES.includes(pairBase)) return "crypto";
+  if (FOREX_PAIRS.includes(pairBase)) return "forex";
+  if (COMMODITIES.includes(pairBase)) return "commodities";
+  return "stocks";
+}
+
+function cleanSymbol(sym: string): string {
+  return sym.replace(/_LEVERAGE$/, "").replace(/_SPOT$/, "");
+}
+
+function parseTickerRow(item: Record<string, unknown>): TickerRow | null {
+  const sym = String(item.symbol ?? "");
+  if (!sym) return null;
+  return {
+    symbol: sym,
+    cleanSymbol: cleanSymbol(sym),
+    lastPrice: Number.parseFloat(String(item.lastPrice ?? "0")),
+    priceChangePercent: Number.parseFloat(
+      String(item.priceChangePercent ?? "0"),
+    ),
+    quoteVolume: Number.parseFloat(String(item.quoteVolume ?? "0")),
+  };
+}
+
+function deduplicateTickers(tickers: TickerRow[]): TickerRow[] {
+  const noDotSet = new Set(
+    tickers.map((r) => r.symbol).filter((s) => !s.endsWith(".")),
+  );
+  return tickers.filter(
+    (r) => !r.symbol.endsWith(".") || !noDotSet.has(r.symbol.slice(0, -1)),
+  );
+}
+
+// ── Sparkline ───────────────────────────────────────────────────────────────
 
 function SparklineChart({
   data,
@@ -102,6 +344,19 @@ function SparklineChart({
   );
 }
 
+// ── Category filter tabs ─────────────────────────────────────────────────────
+
+const CATEGORY_TABS: { key: AssetCategory; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "crypto", label: "Crypto" },
+  { key: "forex", label: "Forex" },
+  { key: "stocks", label: "Stocks" },
+  { key: "commodities", label: "Cmdty" },
+  { key: "indexes", label: "Index" },
+];
+
+// ── Props ────────────────────────────────────────────────────────────────────
+
 interface MarketWatchProps {
   selectedSymbol: AssetSymbol;
   onSelectSymbol: (symbol: AssetSymbol) => void;
@@ -109,12 +364,15 @@ interface MarketWatchProps {
   compact?: boolean;
 }
 
+// ── Component ────────────────────────────────────────────────────────────────
+
 export function MarketWatch({
   selectedSymbol,
   onSelectSymbol,
   searchQuery,
   compact = false,
 }: MarketWatchProps) {
+  // Chart-switchable assets (BTC/ETH/LTC) with sparklines
   const [assets, setAssets] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -123,6 +381,10 @@ export function MarketWatch({
   const exchangeInfoRef = useRef<
     Map<string, { status: string; tradingHours: string }>
   >(new Map());
+
+  // All tickers from API
+  const [allTickers, setAllTickers] = useState<TickerRow[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<AssetCategory>("all");
 
   // Dzengi price feed
   const { prices, status: wsStatus } = useDzengiPriceFeed();
@@ -140,7 +402,6 @@ export function MarketWatch({
           });
         }
         exchangeInfoRef.current = map;
-        // Merge into existing assets if already loaded
         if (isMountedRef.current) {
           setAssets((prev) =>
             prev.map((asset) => {
@@ -159,7 +420,7 @@ export function MarketWatch({
       .catch(() => {});
   }, []);
 
-  // Initial REST fetch to seed prices
+  // Initial REST fetch for chart assets (BTC/ETH/LTC) — seeds sparklines
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch(`${DZENGI_MARKET_BASE}/ticker/24hr`);
@@ -187,10 +448,7 @@ export function MarketWatch({
         const hist = sparklineHistoryRef.current[cfg.id] ?? [];
         const newHist = [...hist, price].slice(-20);
         sparklineHistoryRef.current[cfg.id] = newHist;
-
-        // Merge status from exchangeInfo ref if already loaded
         const info = exchangeInfoRef.current.get(cfg.dzengiKey);
-
         return {
           id: cfg.id,
           symbol: cfg.symbol,
@@ -212,21 +470,48 @@ export function MarketWatch({
       setAssets(updated);
       setLastUpdated(new Date());
     } catch {
-      // Silently fail — keep last known prices
+      // Silently fail
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
   }, []);
 
+  // Fetch ALL tickers for the full asset list
+  const fetchAllTickers = useCallback(async () => {
+    try {
+      const res = await fetch(`${DZENGI_MARKET_BASE}/ticker/24hr`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const arr: unknown[] = Array.isArray(data) ? data : [];
+      const parsed = arr
+        .map((item) => parseTickerRow(item as Record<string, unknown>))
+        .filter((r): r is TickerRow => r !== null);
+      const deduped = deduplicateTickers(parsed);
+      if (isMountedRef.current) setAllTickers(deduped);
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
   useEffect(() => {
     isMountedRef.current = true;
+    // Fetch both in parallel on mount
     fetchPrices();
+    fetchAllTickers();
+
+    // All tickers refresh every 10s
+    const allTickersTimer = setInterval(
+      fetchAllTickers,
+      ALL_TICKERS_INTERVAL_MS,
+    );
+
     return () => {
       isMountedRef.current = false;
+      clearInterval(allTickersTimer);
     };
-  }, [fetchPrices]);
+  }, [fetchPrices, fetchAllTickers]);
 
-  // Sync feed prices into assets state
+  // Sync feed prices into chart assets state (sparklines)
   useEffect(() => {
     if (!Object.keys(prices).length) return;
 
@@ -271,15 +556,6 @@ export function MarketWatch({
     if (isMountedRef.current) setLoading(false);
   }, [prices]);
 
-  // Filter assets by search query
-  const filteredAssets = searchQuery.trim()
-    ? assets.filter(
-        (a) =>
-          a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          a.name.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    : assets;
-
   // Badge appearance based on feed status
   const badgeColor =
     wsStatus === "connected" ? "oklch(0.723 0.185 150)" : "oklch(0.85 0.18 85)";
@@ -293,7 +569,45 @@ export function MarketWatch({
       : "oklch(0.85 0.18 85 / 0.3)";
   const badgeText = wsStatus === "connected" ? "LIVE" : "CONNECTING";
 
-  // ── Compact mode: horizontal strip of asset pill buttons ──────────────────
+  // Compute category counts from all tickers
+  const categoryCounts = {
+    all: allTickers.length,
+    crypto: allTickers.filter((r) => classifyTicker(r) === "crypto").length,
+    forex: allTickers.filter((r) => classifyTicker(r) === "forex").length,
+    stocks: allTickers.filter((r) => classifyTicker(r) === "stocks").length,
+    commodities: allTickers.filter((r) => classifyTicker(r) === "commodities")
+      .length,
+    indexes: allTickers.filter((r) => classifyTicker(r) === "indexes").length,
+  };
+
+  // Filter all tickers by category + search
+  const afterCategory =
+    categoryFilter === "all"
+      ? allTickers
+      : allTickers.filter((r) => classifyTicker(r) === categoryFilter);
+
+  const searchTerm = searchQuery.trim().toUpperCase();
+  const filteredTickers = searchTerm
+    ? afterCategory.filter((r) =>
+        r.cleanSymbol.toUpperCase().includes(searchTerm),
+      )
+    : afterCategory;
+
+  // Sorted by quote volume descending (most active first)
+  const sortedTickers = [...filteredTickers].sort(
+    (a, b) => b.quoteVolume - a.quoteVolume,
+  );
+
+  // Chart assets filtered by search (for compact mode)
+  const filteredAssets = searchQuery.trim()
+    ? assets.filter(
+        (a) =>
+          a.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          a.name.toLowerCase().includes(searchQuery.toLowerCase()),
+      )
+    : assets;
+
+  // ── Compact mode: horizontal strip (UNCHANGED) ───────────────────────────
   if (compact) {
     return (
       <div
@@ -308,10 +622,7 @@ export function MarketWatch({
           {/* Live badge */}
           <div
             className="flex items-center gap-1 px-2 py-1 rounded-full shrink-0"
-            style={{
-              background: badgeBg,
-              border: `1px solid ${badgeBorder}`,
-            }}
+            style={{ background: badgeBg, border: `1px solid ${badgeBorder}` }}
           >
             <Wifi className="w-2.5 h-2.5" style={{ color: badgeColor }} />
             <span
@@ -351,19 +662,16 @@ export function MarketWatch({
                         : "1px solid oklch(1 0 0 / 0.07)",
                     }}
                   >
-                    {/* Color dot */}
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ background: cfg?.color ?? "#888" }}
                     />
-                    {/* Symbol */}
                     <span
                       className="text-sm font-bold font-mono"
                       style={{ color: "oklch(0.910 0.015 240)" }}
                     >
                       {asset.symbol}
                     </span>
-                    {/* Price */}
                     <span
                       className="text-xs font-mono"
                       style={{ color: "oklch(0.780 0.015 240)" }}
@@ -376,7 +684,6 @@ export function MarketWatch({
                           })
                         : "--"}
                     </span>
-                    {/* Change % */}
                     <span
                       className="text-[11px] font-semibold"
                       style={{
@@ -396,7 +703,7 @@ export function MarketWatch({
     );
   }
 
-  // ── Full mode: existing vertical panel ────────────────────────────────────
+  // ── Full mode: all assets panel ───────────────────────────────────────────
   return (
     <div
       className="rounded-2xl flex flex-col h-full"
@@ -410,35 +717,32 @@ export function MarketWatch({
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-4"
+        className="flex items-center justify-between px-4 py-3"
         style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
       >
         <div>
           <h2
-            className="text-base font-semibold"
+            className="text-sm font-semibold"
             style={{ color: "oklch(0.910 0.015 240)" }}
           >
             Market Watch
           </h2>
           {lastUpdated && (
             <p
-              className="text-[11px] mt-0.5"
+              className="text-[10px] mt-0.5"
               style={{ color: "oklch(0.500 0.015 240)" }}
             >
-              Updated {lastUpdated.toLocaleTimeString()}
+              {lastUpdated.toLocaleTimeString()}
             </p>
           )}
         </div>
         <div
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-          style={{
-            background: badgeBg,
-            border: `1px solid ${badgeBorder}`,
-          }}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full"
+          style={{ background: badgeBg, border: `1px solid ${badgeBorder}` }}
         >
-          <Wifi className="w-3 h-3" style={{ color: badgeColor }} />
+          <Wifi className="w-2.5 h-2.5" style={{ color: badgeColor }} />
           <span
-            className="text-[10px] font-semibold uppercase tracking-wider"
+            className="text-[9px] font-semibold uppercase tracking-wider"
             style={{ color: badgeColor }}
           >
             {badgeText}
@@ -446,147 +750,324 @@ export function MarketWatch({
         </div>
       </div>
 
-      {/* Asset list */}
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        {loading ? (
-          <div className="space-y-3 p-2">
-            {["a", "b", "c"].map((k) => (
-              <Skeleton
-                key={k}
-                className="h-16 w-full rounded-xl"
-                style={{ background: "oklch(1 0 0 / 0.05)" }}
-              />
-            ))}
-          </div>
-        ) : filteredAssets.length === 0 ? (
-          <div
-            className="flex items-center justify-center h-24 text-sm"
-            style={{ color: "oklch(0.500 0.015 240)" }}
-          >
-            No results for "{searchQuery}"
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {filteredAssets.map((asset) => {
-              const cfg = ASSET_CONFIG.find((c) => c.id === asset.id);
-              const isPositive = asset.change24h >= 0;
-              const isSelected = selectedSymbol === asset.dzengiKey;
-              const isClosed =
-                asset.status === "BREAK" || asset.status === "HALT";
-              const statusColor =
-                asset.status === "HALT"
-                  ? "oklch(0.637 0.220 25)"
-                  : "oklch(0.85 0.18 85)";
-              return (
-                <button
-                  key={asset.id}
-                  type="button"
-                  data-ocid="market.item.1"
-                  onClick={() => onSelectSymbol(asset.dzengiKey)}
-                  className="w-full flex items-center gap-2 px-2 py-2.5 rounded-xl cursor-pointer transition-colors text-left"
+      {/* Chart assets (BTC/ETH/LTC) with sparklines — always shown at top */}
+      {loading ? (
+        <div
+          className="px-3 py-2 space-y-1"
+          style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
+        >
+          {["a", "b", "c"].map((k) => (
+            <Skeleton
+              key={k}
+              className="h-14 w-full rounded-xl"
+              style={{ background: "oklch(1 0 0 / 0.05)" }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          className="px-3 pt-2 pb-1 space-y-1"
+          style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
+        >
+          {assets.map((asset) => {
+            const cfg = ASSET_CONFIG.find((c) => c.id === asset.id);
+            const isPositive = asset.change24h >= 0;
+            const isSelected = selectedSymbol === asset.dzengiKey;
+            const isClosed =
+              asset.status === "BREAK" || asset.status === "HALT";
+            return (
+              <button
+                key={asset.id}
+                type="button"
+                data-ocid="market.item.1"
+                onClick={() => onSelectSymbol(asset.dzengiKey)}
+                className="w-full flex items-center gap-2 px-2 py-2 rounded-xl cursor-pointer transition-colors text-left"
+                style={{
+                  background: isSelected
+                    ? "oklch(0.785 0.135 200 / 0.08)"
+                    : "transparent",
+                  border: isSelected
+                    ? "1px solid oklch(0.785 0.135 200 / 0.2)"
+                    : "1px solid transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected)
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "oklch(1 0 0 / 0.03)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected)
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "transparent";
+                }}
+              >
+                {/* Icon */}
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
                   style={{
-                    background: isSelected
-                      ? "oklch(0.785 0.135 200 / 0.08)"
-                      : "transparent",
-                    border: isSelected
-                      ? "1px solid oklch(0.785 0.135 200 / 0.2)"
-                      : "1px solid transparent",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        "oklch(1 0 0 / 0.03)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        "transparent";
-                    }
+                    background: `${cfg?.color}20`,
+                    border: `1px solid ${cfg?.color}40`,
+                    color: cfg?.color,
                   }}
                 >
-                  {/* Icon */}
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                    style={{
-                      background: `${cfg?.color}20`,
-                      border: `1px solid ${cfg?.color}40`,
-                      color: cfg?.color,
-                    }}
-                  >
-                    {asset.symbol[0]}
-                  </div>
+                  {asset.symbol[0]}
+                </div>
 
-                  {/* Name + price */}
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="text-sm font-semibold truncate"
-                        style={{ color: "oklch(0.910 0.015 240)" }}
-                      >
-                        {asset.symbol}
-                      </span>
-                      <span
-                        className="text-[11px] truncate"
-                        style={{ color: "oklch(0.500 0.015 240)" }}
-                      >
-                        {asset.name}
-                      </span>
-                    </div>
-                    <div
-                      className="text-sm font-mono font-semibold mt-0.5 truncate"
-                      style={{ color: "oklch(0.870 0.012 240)" }}
+                {/* Name + price */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="text-xs font-semibold"
+                      style={{ color: "oklch(0.910 0.015 240)" }}
                     >
-                      $
-                      {asset.price.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </div>
+                      {asset.symbol}
+                    </span>
+                    <BarChart2
+                      className="w-2.5 h-2.5 shrink-0"
+                      style={{ color: "oklch(0.785 0.135 200)" }}
+                    />
                     {isClosed && (
-                      <div
-                        className="flex items-center gap-0.5 text-[10px] mt-0.5"
-                        style={{ color: statusColor }}
-                        title={asset.tradingHours}
-                      >
-                        <Lock className="w-2.5 h-2.5 shrink-0" />
-                        <span>
-                          {asset.status === "HALT" ? "Halted" : "Closed"}
-                        </span>
-                      </div>
+                      <span title={asset.tradingHours}>
+                        <Lock
+                          className="w-2.5 h-2.5 shrink-0"
+                          style={{
+                            color:
+                              asset.status === "HALT"
+                                ? "oklch(0.637 0.220 25)"
+                                : "oklch(0.85 0.18 85)",
+                          }}
+                        />
+                      </span>
                     )}
                   </div>
+                  <div
+                    className="text-xs font-mono font-semibold"
+                    style={{ color: "oklch(0.870 0.012 240)" }}
+                  >
+                    $
+                    {asset.price > 0
+                      ? asset.price.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })
+                      : "--"}
+                  </div>
+                </div>
 
-                  {/* Right column: sparkline + change % */}
-                  <div className="flex flex-col items-end gap-0.5 shrink-0">
-                    <SparklineChart
-                      data={asset.sparklineData}
-                      positive={isPositive}
-                    />
-                    <div
-                      className="flex items-center gap-0.5 text-xs font-semibold"
+                {/* Sparkline + change */}
+                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                  <SparklineChart
+                    data={asset.sparklineData}
+                    positive={isPositive}
+                  />
+                  <div
+                    className="flex items-center gap-0.5 text-[10px] font-semibold"
+                    style={{
+                      color: isPositive
+                        ? "oklch(0.723 0.185 150)"
+                        : "oklch(0.637 0.220 25)",
+                    }}
+                  >
+                    {isPositive ? (
+                      <TrendingUp className="w-2.5 h-2.5" />
+                    ) : (
+                      <TrendingDown className="w-2.5 h-2.5" />
+                    )}
+                    {isPositive ? "+" : ""}
+                    {asset.change24h.toFixed(2)}%
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Category filter pills */}
+      <div
+        className="flex items-center gap-1 px-3 py-2 flex-wrap"
+        style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
+      >
+        {CATEGORY_TABS.map(({ key, label }) => {
+          const isActive = categoryFilter === key;
+          const count = categoryCounts[key] ?? 0;
+          return (
+            <button
+              key={key}
+              type="button"
+              data-ocid={`market.${key}.tab`}
+              onClick={() => setCategoryFilter(key)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors"
+              style={{
+                background: isActive
+                  ? "oklch(0.785 0.135 200 / 0.18)"
+                  : "oklch(1 0 0 / 0.04)",
+                border: isActive
+                  ? "1px solid oklch(0.785 0.135 200 / 0.40)"
+                  : "1px solid oklch(1 0 0 / 0.08)",
+                color: isActive
+                  ? "oklch(0.785 0.135 200)"
+                  : "oklch(0.600 0.015 240)",
+              }}
+            >
+              {label}
+              {count > 0 && (
+                <span
+                  className="text-[9px] font-bold px-1 rounded-full"
+                  style={{
+                    background: isActive
+                      ? "oklch(0.785 0.135 200 / 0.25)"
+                      : "oklch(1 0 0 / 0.08)",
+                    color: isActive
+                      ? "oklch(0.900 0.080 200)"
+                      : "oklch(0.500 0.015 240)",
+                  }}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* All tickers scrollable list */}
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 420px)" }}
+      >
+        {allTickers.length === 0 && !loading ? (
+          <div
+            className="flex items-center justify-center h-16 text-xs"
+            style={{ color: "oklch(0.500 0.015 240)" }}
+          >
+            Loading market data...
+          </div>
+        ) : sortedTickers.length === 0 ? (
+          <div
+            className="flex items-center justify-center h-16 text-xs"
+            data-ocid="market.empty_state"
+            style={{ color: "oklch(0.500 0.015 240)" }}
+          >
+            {searchQuery ? `No results for "${searchQuery}"` : "No assets"}
+          </div>
+        ) : (
+          <div className="py-1">
+            {sortedTickers.map((ticker, idx) => {
+              const isChartAsset = CHART_SYMBOLS.has(
+                ticker.cleanSymbol.split("/")[0],
+              );
+              const chartCfg = isChartAsset
+                ? ASSET_CONFIG.find((c) =>
+                    ticker.cleanSymbol.startsWith(c.symbol),
+                  )
+                : null;
+              const isPositive = ticker.priceChangePercent >= 0;
+              const category = classifyTicker(ticker);
+              const categoryLabel =
+                category === "crypto"
+                  ? "Crypto"
+                  : category === "forex"
+                    ? "Forex"
+                    : category === "stocks"
+                      ? "Stock"
+                      : category === "commodities"
+                        ? "Cmdty"
+                        : category === "indexes"
+                          ? "Index"
+                          : "Other";
+
+              // Format price
+              let priceStr = "--";
+              if (ticker.lastPrice > 0) {
+                if (ticker.lastPrice >= 1000) {
+                  priceStr = ticker.lastPrice.toLocaleString("en-US", {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  });
+                } else if (ticker.lastPrice >= 1) {
+                  priceStr = ticker.lastPrice.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  });
+                } else {
+                  priceStr = ticker.lastPrice.toFixed(6);
+                }
+              }
+
+              // Chart assets (BTC/ETH/LTC) are already shown in the sparklines section above
+              if (isChartAsset && chartCfg) {
+                return null;
+              }
+
+              // Regular (non-chart) ticker row
+              return (
+                <div
+                  key={ticker.symbol}
+                  data-ocid={`market.item.${idx + 1}`}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-white/[0.025] transition-colors"
+                >
+                  {/* Category dot */}
+                  <div
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{
+                      background:
+                        category === "crypto"
+                          ? "oklch(0.785 0.135 200)"
+                          : category === "forex"
+                            ? "oklch(0.723 0.185 150)"
+                            : category === "stocks"
+                              ? "oklch(0.680 0.150 280)"
+                              : category === "commodities"
+                                ? "oklch(0.75 0.16 60)"
+                                : category === "indexes"
+                                  ? "oklch(0.85 0.18 85)"
+                                  : "oklch(0.500 0.015 240)",
+                    }}
+                  />
+
+                  {/* Symbol + category */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="text-[11px] font-bold font-mono truncate"
+                        style={{ color: "oklch(0.870 0.015 240)" }}
+                      >
+                        {ticker.cleanSymbol}
+                      </span>
+                      <span
+                        className="text-[9px] font-medium px-1 rounded shrink-0"
+                        style={{
+                          background: "oklch(1 0 0 / 0.05)",
+                          color: "oklch(0.500 0.015 240)",
+                        }}
+                      >
+                        {categoryLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Price + change */}
+                  <div className="flex flex-col items-end shrink-0">
+                    <span
+                      className="text-[11px] font-mono"
+                      style={{ color: "oklch(0.870 0.012 240)" }}
+                    >
+                      {ticker.lastPrice > 0 ? `$${priceStr}` : "--"}
+                    </span>
+                    <span
+                      className="text-[10px] font-semibold"
                       style={{
                         color: isPositive
                           ? "oklch(0.723 0.185 150)"
                           : "oklch(0.637 0.220 25)",
                       }}
                     >
-                      {isPositive ? (
-                        <TrendingUp className="w-3 h-3" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3" />
-                      )}
                       {isPositive ? "+" : ""}
-                      {asset.change24h.toFixed(2)}%
-                    </div>
-                    <div
-                      className="text-[10px]"
-                      style={{ color: "oklch(0.500 0.015 240)" }}
-                    >
-                      24h
-                    </div>
+                      {ticker.priceChangePercent.toFixed(2)}%
+                    </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
