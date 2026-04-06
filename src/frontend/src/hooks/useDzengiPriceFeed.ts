@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const DZENGI_REST_BASE = "https://api-adapter.dzengi.com/api/v1";
 const REST_POLL_INTERVAL_MS = 5_000;
 
-const SYMBOLS = ["BTC/USD_LEVERAGE", "ETH/USD_LEVERAGE", "LTC/USD_LEVERAGE"];
+const SYMBOLS = [
+  "BTC/USD_LEVERAGE",
+  "ETH/USD_LEVERAGE",
+  "LTC/USD_LEVERAGE",
+  "XRP/USD_LEVERAGE",
+  "BNB/USD",
+];
 
 export interface AssetPrice {
   price: number;
@@ -11,8 +17,8 @@ export interface AssetPrice {
   open: number;
   high: number;
   low: number;
-  volume24h: number; // base asset volume (e.g. BTC)
-  quoteVolume24h: number; // quote asset volume in USD
+  volume24h: number;
+  quoteVolume24h: number;
 }
 
 export type PriceFeedStatus = "connecting" | "connected" | "disconnected";
@@ -21,10 +27,6 @@ export interface DzengiPriceFeed {
   prices: Record<string, AssetPrice>;
   status: PriceFeedStatus;
 }
-
-// ---------------------------------------------------------------------------
-// REST fetch
-// ---------------------------------------------------------------------------
 
 async function fetchTickersRest(): Promise<Record<string, AssetPrice>> {
   const res = await fetch(`${DZENGI_REST_BASE}/ticker/24hr`);
@@ -58,10 +60,6 @@ async function fetchTickersRest(): Promise<Record<string, AssetPrice>> {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Hook — REST polling only (Dzengi public WS requires auth, returns BAD_REQUEST)
-// ---------------------------------------------------------------------------
-
 export function useDzengiPriceFeed(): DzengiPriceFeed {
   const [prices, setPrices] = useState<Record<string, AssetPrice>>({});
   const [status, setStatus] = useState<PriceFeedStatus>("connecting");
@@ -87,13 +85,10 @@ export function useDzengiPriceFeed(): DzengiPriceFeed {
           setStatus("connected");
         }
       } catch {
-        if (isMountedRef.current) {
-          setStatus("disconnected");
-        }
+        if (isMountedRef.current) setStatus("disconnected");
       }
     }
 
-    // Fetch immediately, then poll
     poll();
     restPollTimerRef.current = setInterval(poll, REST_POLL_INTERVAL_MS);
 

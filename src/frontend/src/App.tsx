@@ -19,21 +19,22 @@ import {
 export type AssetSymbol =
   | "BTC/USD_LEVERAGE"
   | "ETH/USD_LEVERAGE"
-  | "LTC/USD_LEVERAGE";
+  | "LTC/USD_LEVERAGE"
+  | "XRP/USD_LEVERAGE"
+  | "BNB/USD";
 
 function App() {
   const { data: trades = [], isLoading: tradesLoading } = useGetAllTrades();
   const { data: stats, isLoading: statsLoading } = useGetTradingStats();
   const { mutate: seedTrades } = useSeedSampleTrades();
   const seededRef = useRef(false);
-  const isMobile = useIsMobile(1024); // lg breakpoint
+  const isMobile = useIsMobile(1024);
 
   const [selectedSymbol, setSelectedSymbol] =
     useState<AssetSymbol>("BTC/USD_LEVERAGE");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveView] = useState("Dashboard");
 
-  // Seed sample trades on first load if empty
   useEffect(() => {
     if (!tradesLoading && trades.length === 0 && !seededRef.current) {
       seededRef.current = true;
@@ -56,7 +57,6 @@ function App() {
       />
 
       <main className="flex-1 px-3 sm:px-4 md:px-6 py-4 md:py-6 max-w-[1600px] mx-auto w-full">
-        {/* 2-column grid: shown only on Dashboard */}
         {showMainGrid && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -64,10 +64,8 @@ function App() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="mb-4"
           >
-            {/* Mobile: compact asset strip + chart stacked */}
             {isMobile ? (
               <div className="flex flex-col gap-4">
-                {/* 1. Compact asset selector strip */}
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -82,7 +80,6 @@ function App() {
                   />
                 </motion.div>
 
-                {/* 2. Chart full width */}
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -94,12 +91,10 @@ function App() {
                 </motion.div>
               </div>
             ) : (
-              /* Desktop: 2-column grid (market watch + chart) */
               <div
                 className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4"
                 style={{ minHeight: "540px" }}
               >
-                {/* Left: Market Watch */}
                 <motion.div
                   initial={{ opacity: 0, x: -12 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -113,7 +108,6 @@ function App() {
                   />
                 </motion.div>
 
-                {/* Center: Chart */}
                 <motion.div
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -127,7 +121,6 @@ function App() {
           </motion.div>
         )}
 
-        {/* Routed views */}
         {isStatistics ? (
           <motion.div
             key="statistics"

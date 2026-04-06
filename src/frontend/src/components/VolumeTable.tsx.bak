@@ -402,8 +402,7 @@ function computeStatusFromSchedule(
       // "HH:MM - HH:MM" = from start to end
       // "- HH:MM"       = from midnight (00:00) to end
       // "HH:MM -"       = from start to midnight (24:00 = 1440 min)
-      // "HH:MM - 00:00" = from start to end-of-day (00:00 means midnight = 1440)
-      // "-"             = all day
+      // "-"             = all day (should not happen but handle it)
       const parts = win.split("-").map((p) => p.trim());
 
       let startMin = 0;
@@ -411,12 +410,9 @@ function computeStatusFromSchedule(
 
       if (parts.length === 2) {
         startMin = parts[0] ? parseMinutes(parts[0]) : 0;
-        const rawEnd = parts[1] ? parseMinutes(parts[1]) : 1440;
-        // "00:00" as an end time means end-of-day (midnight = 1440), not start-of-day (0).
-        // e.g. "Mon 08:00 - 00:00" means open from 08:00 through midnight.
-        endMin = parts[1] && rawEnd === 0 ? 1440 : rawEnd;
+        endMin = parts[1] ? parseMinutes(parts[1]) : 1440;
       } else if (parts.length === 1 && parts[0]) {
-        // Single time token — treat as open from that time through end of day
+        // Whole day single time? Treat as open from that time
         startMin = parseMinutes(parts[0]);
         endMin = 1440;
       }
@@ -483,7 +479,6 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("quoteVolume");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [assetFilter, setAssetFilter] = useState<AssetCategory>("all");
-  const [showOpenOnly, setShowOpenOnly] = useState(false);
   // Local search state — synced from prop but also independently editable
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const isMountedRef = useRef(true);
@@ -605,7 +600,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
     other: rows.filter((r) => classifyAsset(r) === "other").length,
   };
 
-  // Apply category filter, then search filter, then open-only filter, then sort
+  // Apply category filter, then search filter, then sort
   const afterCategory =
     assetFilter === "all"
       ? rows
@@ -618,11 +613,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
       )
     : afterCategory;
 
-  const afterOpenFilter = showOpenOnly
-    ? afterSearch.filter((r) => r.status === "TRADING" || !r.status)
-    : afterSearch;
-
-  const sorted = [...afterOpenFilter].sort((a, b) => {
+  const sorted = [...afterSearch].sort((a, b) => {
     const av = a[sortKey];
     const bv = b[sortKey];
     if (typeof av === "string" && typeof bv === "string") {
@@ -771,7 +762,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
           </div>
         </div>
 
-        {/* Search + Open Only toggle + Filter tabs row */}
+        {/* Search + Filter tabs row */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3">
           {/* Search input */}
           <div className="relative w-full sm:w-56 shrink-0">
@@ -792,53 +783,6 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
               }}
             />
           </div>
-
-          {/* Open Only toggle button */}
-          <button
-            type="button"
-            data-ocid="volume.open_only.toggle"
-            onClick={() => setShowOpenOnly((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none shrink-0"
-            style={{
-              background: showOpenOnly
-                ? "oklch(0.723 0.185 150 / 0.15)"
-                : "oklch(1 0 0 / 0.04)",
-              border: showOpenOnly
-                ? "1px solid oklch(0.723 0.185 150 / 0.55)"
-                : "1px solid oklch(1 0 0 / 0.08)",
-              color: showOpenOnly
-                ? "oklch(0.723 0.185 150)"
-                : "oklch(0.550 0.015 240)",
-              fontWeight: showOpenOnly ? 600 : 400,
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              if (!showOpenOnly) {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "oklch(1 0 0 / 0.07)";
-                (e.currentTarget as HTMLButtonElement).style.color =
-                  "oklch(0.720 0.015 240)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!showOpenOnly) {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "oklch(1 0 0 / 0.04)";
-                (e.currentTarget as HTMLButtonElement).style.color =
-                  "oklch(0.550 0.015 240)";
-              }
-            }}
-          >
-            {showOpenOnly ? (
-              <span
-                className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ background: "oklch(0.723 0.185 150)" }}
-              />
-            ) : (
-              <Wifi className="w-3 h-3 shrink-0" />
-            )}
-            <span>Open Only</span>
-          </button>
 
           {/* Filter tabs */}
           <div
@@ -1132,9 +1076,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
           <p className="text-sm" style={{ color: "oklch(0.500 0.015 240)" }}>
             {searchTerm
               ? `No assets matching "${localSearch}"`
-              : showOpenOnly
-                ? "No open markets in this category right now"
-                : "No assets found in this category"}
+              : "No assets found in this category"}
           </p>
         </div>
       )}

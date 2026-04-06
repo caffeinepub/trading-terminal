@@ -39,6 +39,8 @@ const SYMBOL_LABELS: Record<AssetSymbol, { label: string; ticker: string }> = {
   "BTC/USD_LEVERAGE": { label: "BTC / USD", ticker: "BTC" },
   "ETH/USD_LEVERAGE": { label: "ETH / USD", ticker: "ETH" },
   "LTC/USD_LEVERAGE": { label: "LTC / USD", ticker: "LTC" },
+  "XRP/USD_LEVERAGE": { label: "XRP / USD", ticker: "XRP" },
+  "BNB/USD": { label: "BNB / USD", ticker: "BNB" },
 };
 
 const GREEN = "oklch(0.723 0.185 150)";
@@ -48,6 +50,10 @@ const RED = "oklch(0.637 0.220 25)";
 const PAD = { top: 10, right: 20, bottom: 30, left: 60 };
 
 function formatPrice(p: number) {
+  if (p < 1) return `$${p.toFixed(4)}`;
+  if (p < 100) {
+    return `$${p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   return `$${p.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
@@ -293,7 +299,7 @@ const CandlestickChart = memo(function CandlestickChart({
             fontSize={10}
             fill="oklch(0.450 0.012 240)"
           >
-            ${(yl.price / 1000).toFixed(1)}k
+            {formatPrice(yl.price)}
           </text>
         ))}
 
@@ -477,7 +483,7 @@ const ChartPriceHeader = memo(function ChartPriceHeader({
               <TrendingDown className="w-4 h-4" />
             )}
             {isPositive ? "+" : ""}
-            {priceChange.toFixed(0)} ({isPositive ? "+" : ""}
+            {formatPrice(Math.abs(priceChange))} ({isPositive ? "+" : ""}
             {priceChangePercent.toFixed(2)}%)
           </div>
         )}

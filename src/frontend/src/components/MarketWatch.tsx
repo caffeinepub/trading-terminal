@@ -69,10 +69,58 @@ const ASSET_CONFIG: {
     color: "#BFBBBB",
     dzengiKey: "LTC/USD_LEVERAGE",
   },
+  {
+    id: "xrp",
+    symbol: "XRP",
+    name: "XRP",
+    color: "#346AA9",
+    dzengiKey: "XRP/USD_LEVERAGE",
+  },
+  {
+    id: "bnb",
+    symbol: "BNB",
+    name: "BNB",
+    color: "#F3BA2F",
+    dzengiKey: "BNB/USD",
+  },
 ];
 
 // Chart-switchable symbol lookup set
 const CHART_SYMBOLS = new Set(ASSET_CONFIG.map((c) => c.symbol));
+
+// ── Smart price formatter ───────────────────────────────────────────────────
+
+function formatAssetPrice(price: number): string {
+  if (price <= 0) return "--";
+  if (price < 1) return `$${price.toFixed(4)}`;
+  if (price < 100) {
+    return `$${price.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return `$${price.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatCompactPrice(price: number): string {
+  if (price <= 0) return "--";
+  if (price < 1) {
+    return `$${price.toFixed(4)}`;
+  }
+  if (price < 100) {
+    return `$${price.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return `$${price.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
+}
 
 // ── Asset classification ────────────────────────────────────────────────────
 
@@ -372,7 +420,7 @@ export function MarketWatch({
   searchQuery,
   compact = false,
 }: MarketWatchProps) {
-  // Chart-switchable assets (BTC/ETH/LTC) with sparklines
+  // Chart-switchable assets with sparklines
   const [assets, setAssets] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -420,7 +468,7 @@ export function MarketWatch({
       .catch(() => {});
   }, []);
 
-  // Initial REST fetch for chart assets (BTC/ETH/LTC) — seeds sparklines
+  // Initial REST fetch for chart assets — seeds sparklines
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch(`${DZENGI_MARKET_BASE}/ticker/24hr`);
@@ -607,7 +655,7 @@ export function MarketWatch({
       )
     : assets;
 
-  // ── Compact mode: horizontal strip (UNCHANGED) ───────────────────────────
+  // ── Compact mode: horizontal strip ──────────────────────────────────────
   if (compact) {
     return (
       <div
@@ -635,7 +683,7 @@ export function MarketWatch({
 
           {/* Asset pills */}
           {loading
-            ? ["a", "b", "c"].map((k) => (
+            ? ["a", "b", "c", "d", "e", "f"].map((k) => (
                 <Skeleton
                   key={k}
                   className="h-10 w-28 rounded-xl shrink-0"
@@ -676,13 +724,7 @@ export function MarketWatch({
                       className="text-xs font-mono"
                       style={{ color: "oklch(0.780 0.015 240)" }}
                     >
-                      $
-                      {asset.price > 0
-                        ? asset.price.toLocaleString("en-US", {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })
-                        : "--"}
+                      {formatCompactPrice(asset.price)}
                     </span>
                     <span
                       className="text-[11px] font-semibold"
@@ -750,13 +792,13 @@ export function MarketWatch({
         </div>
       </div>
 
-      {/* Chart assets (BTC/ETH/LTC) with sparklines — always shown at top */}
+      {/* Chart assets with sparklines — always shown at top */}
       {loading ? (
         <div
           className="px-3 py-2 space-y-1"
           style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
         >
-          {["a", "b", "c"].map((k) => (
+          {["a", "b", "c", "d", "e", "f"].map((k) => (
             <Skeleton
               key={k}
               className="h-14 w-full rounded-xl"
@@ -844,13 +886,7 @@ export function MarketWatch({
                     className="text-xs font-mono font-semibold"
                     style={{ color: "oklch(0.870 0.012 240)" }}
                   >
-                    $
-                    {asset.price > 0
-                      ? asset.price.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })
-                      : "--"}
+                    {formatAssetPrice(asset.price)}
                   </div>
                 </div>
 
@@ -934,7 +970,7 @@ export function MarketWatch({
       {/* All tickers scrollable list */}
       <div
         className="flex-1 overflow-y-auto"
-        style={{ maxHeight: "calc(100vh - 420px)" }}
+        style={{ maxHeight: "calc(100vh - 580px)" }}
       >
         {allTickers.length === 0 && !loading ? (
           <div
@@ -995,7 +1031,7 @@ export function MarketWatch({
                 }
               }
 
-              // Chart assets (BTC/ETH/LTC) are already shown in the sparklines section above
+              // Chart assets are already shown in the sparklines section above
               if (isChartAsset && chartCfg) {
                 return null;
               }
