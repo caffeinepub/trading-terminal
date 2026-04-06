@@ -147,6 +147,31 @@ const CRYPTO_BASES = [
   "FET",
   "OCEAN",
   "RLC",
+  // Extended crypto symbols
+  "0x",
+  "APE",
+  "BNT",
+  "CAKE",
+  "CELO",
+  "COTI",
+  "CVC",
+  "DAI",
+  "ETC",
+  "INJ",
+  "JASMY",
+  "LDO",
+  "MEW",
+  "PAXG",
+  "QNT",
+  "REP",
+  "RSR",
+  "RVN",
+  "SHIB",
+  "TON",
+  "TWT",
+  "UMA",
+  "USDC",
+  "USDT",
 ];
 
 const FOREX_PAIRS = [
@@ -211,18 +236,20 @@ const INDEX_SYMBOLS = new Set([
   "HK50",
   "AU200",
   "JP225",
+  "DXY",
 ]);
 
 function classifyAsset(row: TickerRow): Exclude<AssetCategory, "all"> {
   const sym = row.cleanSymbol;
 
-  // No slash: could be index, stock, or named commodity
+  // No slash: index, commodity, or stock
   if (!sym.includes("/")) {
-    // Strip trailing dot to get base name
     const base = sym.endsWith(".") ? sym.slice(0, -1) : sym;
-    // Index check: base (without trailing dot) is in INDEX_SYMBOLS
+
+    // Index check
     if (INDEX_SYMBOLS.has(base)) return "indexes";
-    // Named commodity fallback (Gold., Silver., Oil - Crude., etc.)
+
+    // Named commodity check (full name keywords like "Gold", "Coffee Arabica", etc.)
     if (
       sym.includes("Gold") ||
       sym.includes("Silver") ||
@@ -230,11 +257,26 @@ function classifyAsset(row: TickerRow): Exclude<AssetCategory, "all"> {
       sym.includes("Gas") ||
       sym.includes("Copper") ||
       sym.includes("Platinum") ||
-      sym.includes("Palladium")
+      sym.includes("Palladium") ||
+      sym.includes("Corn") ||
+      sym.includes("Soybean") ||
+      sym.includes("Lead") ||
+      sym.includes("Coffee") ||
+      sym.includes("Cotton") ||
+      sym.includes("Wheat") ||
+      sym.includes("Sugar") ||
+      sym.includes("Cocoa")
     )
       return "commodities";
+
     // Stock: ends with "." or contains a dot (e.g. "ADS.DE.")
     if (sym.includes(".")) return "stocks";
+
+    // Bare crypto symbols (e.g. DASH traded standalone)
+    if (CRYPTO_BASES.includes(sym)) return "crypto";
+
+    // Everything else without slash = stock (catches AAPL, TSLA, NVDA, etc.)
+    return "stocks";
   }
 
   // Pair-based classification
