@@ -32,6 +32,7 @@ const NAV_LINKS = [
   { label: "Dashboard" },
   { label: "Markets" },
   { label: "Analysis" },
+  { label: "Statistics" },
   { label: "Tools" },
   { label: "Volume" },
 ];

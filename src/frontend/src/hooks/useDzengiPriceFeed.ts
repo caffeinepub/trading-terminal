@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const DZENGI_REST_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
+const DZENGI_REST_BASE = "https://api-adapter.dzengi.com/api/v1";
 const REST_POLL_INTERVAL_MS = 5_000;
 
 const SYMBOLS = ["BTC/USD_LEVERAGE", "ETH/USD_LEVERAGE", "LTC/USD_LEVERAGE"];

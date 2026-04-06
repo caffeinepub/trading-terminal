@@ -186,9 +186,7 @@ async function getDzengiTicker() {
   if (dzengiTickerCache && now - dzengiTickerCacheTime < DZENGI_TICKER_TTL) {
     return dzengiTickerCache;
   }
-  const res = await fetch(
-    "https://demo-api-adapter.dzengi.com/api/v1/ticker/24hr",
-  );
+  const res = await fetch("https://api-adapter.dzengi.com/api/v1/ticker/24hr");
   if (!res.ok) throw new Error("dzengi ticker");
   dzengiTickerCache = await res.json();
   dzengiTickerCacheTime = now;

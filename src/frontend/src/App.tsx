@@ -43,7 +43,8 @@ function App() {
 
   const isVolume = activeView === "Volume";
   const isAnalysis = activeView === "Analysis";
-  const showMainGrid = !isVolume && !isAnalysis;
+  const isStatistics = activeView === "Statistics";
+  const showMainGrid = !isVolume && !isAnalysis && !isStatistics;
 
   return (
     <div className="min-h-screen flex flex-col" data-ocid="dashboard.page">
@@ -55,7 +56,7 @@ function App() {
       />
 
       <main className="flex-1 px-3 sm:px-4 md:px-6 py-4 md:py-6 max-w-[1600px] mx-auto w-full">
-        {/* 3-column grid: hidden on Volume and Analysis tabs */}
+        {/* 2-column grid: shown only on Dashboard */}
         {showMainGrid && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -63,7 +64,7 @@ function App() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="mb-4"
           >
-            {/* Mobile: compact asset strip + chart + stats stacked */}
+            {/* Mobile: compact asset strip + chart stacked */}
             {isMobile ? (
               <div className="flex flex-col gap-4">
                 {/* 1. Compact asset selector strip */}
@@ -91,21 +92,11 @@ function App() {
                 >
                   <BtcChart symbol={selectedSymbol} />
                 </motion.div>
-
-                {/* 3. Trading Stats below chart */}
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
-                  data-ocid="stats.panel"
-                >
-                  <TradingStatsPanel stats={stats} loading={statsLoading} />
-                </motion.div>
               </div>
             ) : (
-              /* Desktop: 3-column grid */
+              /* Desktop: 2-column grid (market watch + chart) */
               <div
-                className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-4"
+                className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4"
                 style={{ minHeight: "540px" }}
               >
                 {/* Left: Market Watch */}
@@ -131,23 +122,23 @@ function App() {
                 >
                   <BtcChart symbol={selectedSymbol} />
                 </motion.div>
-
-                {/* Right: Trading Stats */}
-                <motion.div
-                  initial={{ opacity: 0, x: 12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
-                  data-ocid="stats.panel"
-                >
-                  <TradingStatsPanel stats={stats} loading={statsLoading} />
-                </motion.div>
               </div>
             )}
           </motion.div>
         )}
 
-        {/* Bottom section: Analysis / Volume / Trades */}
-        {isAnalysis ? (
+        {/* Routed views */}
+        {isStatistics ? (
+          <motion.div
+            key="statistics"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            data-ocid="stats.panel"
+          >
+            <TradingStatsPanel stats={stats} loading={statsLoading} fullPage />
+          </motion.div>
+        ) : isAnalysis ? (
           <motion.div
             key="analysis"
             initial={{ opacity: 0, y: 16 }}

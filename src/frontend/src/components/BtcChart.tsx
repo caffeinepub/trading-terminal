@@ -4,7 +4,7 @@ import { RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetSymbol } from "../App";
 
-const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
+const DZENGI_MARKET_BASE = "https://api-adapter.dzengi.com/api/v1";
 
 interface KlineBar {
   time: string;

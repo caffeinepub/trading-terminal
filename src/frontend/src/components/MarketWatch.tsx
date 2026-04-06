@@ -4,7 +4,7 @@ import { Lock, TrendingDown, TrendingUp, Wifi } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssetSymbol } from "../App";
 
-const DZENGI_MARKET_BASE = "https://demo-api-adapter.dzengi.com/api/v1";
+const DZENGI_MARKET_BASE = "https://api-adapter.dzengi.com/api/v1";
 
 interface MarketAsset {
   id: string;

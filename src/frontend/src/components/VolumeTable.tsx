@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const DZENGI_API = "https://demo-api-adapter.dzengi.com/api/v1";
+const DZENGI_API = "https://api-adapter.dzengi.com/api/v1";
 const POLL_INTERVAL_MS = 10_000;
 
 const SKEL_ROWS = [
