@@ -26,6 +26,59 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const DZENGI_API = "https://api-adapter.dzengi.com/api/v1";
 const POLL_INTERVAL_MS = 10_000;
 
+// ---- Independent volume metrics hook (same pattern as AnalysisPanel) ----
+interface VolumeMetrics {
+  spot: number;
+  leverage: number;
+  total: number;
+  loading: boolean;
+}
+
+function useVolumeMetrics(): VolumeMetrics {
+  const [state, setState] = useState<VolumeMetrics>({
+    spot: 0,
+    leverage: 0,
+    total: 0,
+    loading: true,
+  });
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchVolume = useCallback(async () => {
+    try {
+      const res = await fetch(`${DZENGI_API}/ticker/24hr`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const tickers = (await res.json()) as Array<{
+        symbol: string;
+        quoteVolume?: string;
+      }>;
+      let spot = 0;
+      let leverage = 0;
+      for (const t of tickers) {
+        const vol = Number.parseFloat(t.quoteVolume ?? "0");
+        if (!Number.isFinite(vol) || vol <= 0) continue;
+        if (t.symbol.includes("_LEVERAGE")) {
+          leverage += vol;
+        } else {
+          spot += vol;
+        }
+      }
+      setState({ spot, leverage, total: spot + leverage, loading: false });
+    } catch {
+      setState((prev) => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVolume();
+    timerRef.current = setInterval(fetchVolume, POLL_INTERVAL_MS);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [fetchVolume]);
+
+  return state;
+}
+
 const SKEL_ROWS = [
   "r1",
   "r2",
@@ -595,23 +648,13 @@ function VolumeStatCard({
 }
 
 // ---- Stats bar (3 cards above the table) ----
-// Always receives ALL rows (unfiltered) so totals are accurate regardless of table filters
+// Uses independent volume metrics hook — not computed from table rows (which start empty)
 interface VolumeStatsBarProps {
-  allRows: TickerRow[];
-  loading: boolean;
+  metrics: VolumeMetrics;
 }
 
-function VolumeStatsBar({ allRows, loading }: VolumeStatsBarProps) {
-  let spot = 0;
-  let leverage = 0;
-  for (const r of allRows) {
-    if (r.symbol.includes("_LEVERAGE")) {
-      leverage += r.quoteVolume;
-    } else {
-      spot += r.quoteVolume;
-    }
-  }
-  const total = spot + leverage;
+function VolumeStatsBar({ metrics }: VolumeStatsBarProps) {
+  const { spot, leverage, total, loading } = metrics;
   const spotPct = total > 0 ? (spot / total) * 100 : 0;
   const levPct = total > 0 ? (leverage / total) * 100 : 0;
 
@@ -668,6 +711,7 @@ interface VolumeTableProps {
 }
 
 export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
+  const volumeMetrics = useVolumeMetrics();
   const [rows, setRows] = useState<TickerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1153,8 +1197,8 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
         </div>
       </div>
 
-      {/* Exchange Volume Stats Bar — always uses ALL rows for accurate totals */}
-      <VolumeStatsBar allRows={rows} loading={loading} />
+      {/* Exchange Volume Stats Bar — uses independent fetch, not derived from table rows */}
+      <VolumeStatsBar metrics={volumeMetrics} />
 
       {/* Table */}
       <div className="overflow-x-auto">
