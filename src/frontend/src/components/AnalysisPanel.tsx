@@ -274,15 +274,15 @@ function MacroCard({
 
   return (
     <div
-      className="rounded-xl p-3 sm:p-4 flex flex-col gap-1 min-w-0"
+      className="rounded-xl p-3 sm:p-4 flex flex-col gap-1 min-w-0 overflow-hidden"
       style={{
         background: "oklch(0.155 0.020 240)",
         border: "1px solid oklch(1 0 0 / 0.08)",
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 mb-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div
             className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center shrink-0"
             style={{
@@ -292,7 +292,7 @@ function MacroCard({
           >
             {icon}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div
               className="text-xs font-semibold truncate"
               style={{ color: "oklch(0.910 0.015 240)" }}
@@ -309,16 +309,19 @@ function MacroCard({
         </div>
         {data.loading ? (
           <Skeleton
-            className="h-4 w-12 sm:w-16 rounded"
+            className="h-4 w-12 sm:w-16 rounded shrink-0"
             style={{ background: "oklch(1 0 0 / 0.06)" }}
           />
         ) : data.error ? (
-          <span className="text-xs" style={{ color: "oklch(0.450 0.015 240)" }}>
+          <span
+            className="text-xs shrink-0"
+            style={{ color: "oklch(0.450 0.015 240)" }}
+          >
             {"\u2013"}
           </span>
         ) : (
           <div
-            className="flex items-center gap-1 text-xs font-semibold"
+            className="flex items-center gap-1 text-xs font-semibold shrink-0"
             style={{ color }}
           >
             {isPositive ? (
@@ -342,14 +345,14 @@ function MacroCard({
         />
       ) : data.error ? (
         <span
-          className="text-base sm:text-lg font-mono font-bold"
+          className="text-sm sm:text-base font-mono font-bold truncate"
           style={{ color: "oklch(0.450 0.015 240)" }}
         >
           unavailable
         </span>
       ) : (
         <div
-          className="font-mono font-bold text-lg sm:text-xl mt-0.5"
+          className="font-mono font-bold text-base sm:text-xl mt-0.5 truncate min-w-0"
           style={{ color: "oklch(0.910 0.015 240)" }}
         >
           {prefix}
