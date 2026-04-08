@@ -6,13 +6,202 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   MacroAssetState,
   OpenInterestState,
   Us10yState,
 } from "../hooks/useAnalysisData";
 import { useAnalysisData } from "../hooks/useAnalysisData";
+
+// ---- Exchange Volume hook ----
+interface VolumeMetrics {
+  spot: number;
+  leverage: number;
+  total: number;
+  loading: boolean;
+  error: boolean;
+  lastUpdated: number;
+}
+
+function useVolumeMetrics(): VolumeMetrics {
+  const [state, setState] = useState<VolumeMetrics>({
+    spot: 0,
+    leverage: 0,
+    total: 0,
+    loading: true,
+    error: false,
+    lastUpdated: 0,
+  });
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchVolume = useCallback(async () => {
+    try {
+      const res = await fetch(
+        "https://api-adapter.dzengi.com/api/v1/ticker/24hr",
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const tickers = (await res.json()) as Array<{
+        symbol: string;
+        quoteVolume?: string;
+      }>;
+      let spot = 0;
+      let leverage = 0;
+      for (const t of tickers) {
+        const vol = Number.parseFloat(t.quoteVolume ?? "0");
+        if (!Number.isFinite(vol) || vol <= 0) continue;
+        if (t.symbol.includes("_LEVERAGE")) {
+          leverage += vol;
+        } else {
+          spot += vol;
+        }
+      }
+      setState({
+        spot,
+        leverage,
+        total: spot + leverage,
+        loading: false,
+        error: false,
+        lastUpdated: Date.now(),
+      });
+    } catch {
+      setState((prev) => ({ ...prev, loading: false, error: true }));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchVolume();
+    timerRef.current = setInterval(fetchVolume, 10_000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [fetchVolume]);
+
+  return state;
+}
+
+// ---- USD formatter ----
+function fmtUsd(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
+function fmtUsdCompact(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return fmtUsd(n);
+}
+
+// ---- Volume card ----
+interface VolumeCardProps {
+  label: string;
+  sublabel: string;
+  value: number;
+  pct: number;
+  color: string;
+  bgColor: string;
+  loading: boolean;
+  error: boolean;
+  icon: React.ReactNode;
+}
+
+function VolumeCard({
+  label,
+  sublabel,
+  value,
+  pct,
+  color,
+  bgColor,
+  loading,
+  error,
+  icon,
+}: VolumeCardProps) {
+  return (
+    <div
+      className="rounded-xl p-4 flex flex-col gap-2 flex-1 min-w-0"
+      style={{
+        background: "oklch(0.155 0.020 240)",
+        border: "1px solid oklch(1 0 0 / 0.08)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: bgColor, color }}
+          >
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div
+              className="text-xs font-semibold truncate"
+              style={{ color: "oklch(0.910 0.015 240)" }}
+            >
+              {label}
+            </div>
+            <div
+              className="text-[10px] font-mono truncate"
+              style={{ color: "oklch(0.450 0.015 240)" }}
+            >
+              {sublabel}
+            </div>
+          </div>
+        </div>
+        {!loading && !error && (
+          <span
+            className="text-[10px] font-semibold shrink-0 px-2 py-0.5 rounded-full font-mono"
+            style={{
+              color,
+              background: bgColor,
+              border: `1px solid ${color}33`,
+            }}
+          >
+            {pct.toFixed(1)}%
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <Skeleton
+          className="h-8 w-32 rounded mt-1"
+          style={{ background: "oklch(1 0 0 / 0.06)" }}
+        />
+      ) : error ? (
+        <span
+          className="text-xl font-mono font-bold"
+          style={{ color: "oklch(0.450 0.015 240)" }}
+        >
+          unavailable
+        </span>
+      ) : (
+        <>
+          <div
+            className="font-mono font-bold text-lg sm:text-xl mt-0.5 truncate min-w-0"
+            style={{ color: "oklch(0.910 0.015 240)" }}
+            title={fmtUsd(value)}
+          >
+            {fmtUsdCompact(value)}
+          </div>
+          {/* Share bar */}
+          <div
+            className="relative h-1.5 rounded-full overflow-hidden"
+            style={{ background: "oklch(1 0 0 / 0.07)" }}
+          >
+            <div
+              className="absolute h-full rounded-full transition-all duration-700"
+              style={{ width: `${Math.min(pct, 100)}%`, background: color }}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ---- Helpers ----
 function fmtNum(n: number, decimals = 2): string {
@@ -1028,9 +1217,12 @@ function SectionHeader({
 // ---- Main component ----
 export function AnalysisPanel() {
   const data = useAnalysisData();
+  const vol = useVolumeMetrics();
   const fngCountdown = useFngCountdown(data.fearGreed.timeUntilUpdate);
   const { fearGreed } = data;
   const fgColor = fngColor(fearGreed.value);
+  const spotPct = vol.total > 0 ? (vol.spot / vol.total) * 100 : 0;
+  const leveragePct = vol.total > 0 ? (vol.leverage / vol.total) * 100 : 0;
 
   return (
     <div
@@ -1073,6 +1265,107 @@ export function AnalysisPanel() {
       </div>
 
       <div className="px-4 sm:px-6 py-4 sm:py-6 flex flex-col gap-8 md:gap-10">
+        {/* ===== Section 0: Exchange Volume ===== */}
+        <section data-ocid="analysis.section.volume">
+          <SectionHeader
+            title="Exchange Volume (24h)"
+            subtitle="Spot vs Leverage — Dzengi"
+            badge="Live"
+          />
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <VolumeCard
+              label="Spot Volume"
+              sublabel="Non-leverage pairs"
+              value={vol.spot}
+              pct={spotPct}
+              color="oklch(0.723 0.185 150)"
+              bgColor="oklch(0.723 0.185 150 / 0.12)"
+              loading={vol.loading}
+              error={vol.error}
+              icon={<DollarSign className="w-3.5 h-3.5" />}
+            />
+            <VolumeCard
+              label="Leverage Volume"
+              sublabel="_LEVERAGE pairs (CFD)"
+              value={vol.leverage}
+              pct={leveragePct}
+              color="oklch(0.785 0.135 200)"
+              bgColor="oklch(0.785 0.135 200 / 0.12)"
+              loading={vol.loading}
+              error={vol.error}
+              icon={<Activity className="w-3.5 h-3.5" />}
+            />
+            {/* Total combined */}
+            <div
+              className="rounded-xl p-4 flex flex-col gap-2 flex-1 min-w-0 sm:max-w-[200px]"
+              style={{
+                background: "oklch(0.148 0.018 240)",
+                border: "1px solid oklch(1 0 0 / 0.08)",
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                  style={{
+                    background: "oklch(0.820 0.160 90 / 0.12)",
+                    color: "oklch(0.820 0.160 90)",
+                  }}
+                >
+                  <BarChart2 className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div
+                    className="text-xs font-semibold"
+                    style={{ color: "oklch(0.910 0.015 240)" }}
+                  >
+                    Total Volume
+                  </div>
+                  <div
+                    className="text-[10px] font-mono"
+                    style={{ color: "oklch(0.450 0.015 240)" }}
+                  >
+                    All pairs combined
+                  </div>
+                </div>
+              </div>
+              {vol.loading ? (
+                <Skeleton
+                  className="h-8 w-28 rounded mt-1"
+                  style={{ background: "oklch(1 0 0 / 0.06)" }}
+                />
+              ) : vol.error ? (
+                <span
+                  className="text-xl font-mono font-bold"
+                  style={{ color: "oklch(0.450 0.015 240)" }}
+                >
+                  unavailable
+                </span>
+              ) : (
+                <div
+                  className="font-mono font-bold text-lg sm:text-xl mt-0.5 truncate"
+                  style={{ color: "oklch(0.910 0.015 240)" }}
+                  title={new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }).format(vol.total)}
+                >
+                  {fmtUsdCompact(vol.total)}
+                </div>
+              )}
+              {!vol.loading && !vol.error && (
+                <p
+                  className="text-[10px] italic"
+                  style={{ color: "oklch(0.450 0.015 240)" }}
+                >
+                  Updates every 10s
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* ===== Section 1: Market Sentiment ===== */}
         <section data-ocid="analysis.section">
           <SectionHeader title="Market Sentiment" badge="alternative.me" />

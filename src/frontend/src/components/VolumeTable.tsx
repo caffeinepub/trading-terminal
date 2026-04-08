@@ -12,6 +12,8 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  BarChart2,
+  DollarSign,
   Lock,
   RefreshCw,
   Search,
@@ -85,6 +87,8 @@ type AssetCategory =
   | "commodities"
   | "indexes"
   | "other";
+
+type AssetType = "all" | "spot" | "leverage";
 
 const CRYPTO_BASES = [
   "BTC",
@@ -340,6 +344,12 @@ const FILTER_TABS: { key: AssetCategory; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
+const TYPE_FILTERS: { key: AssetType; label: string }[] = [
+  { key: "all", label: "All Types" },
+  { key: "spot", label: "Spot" },
+  { key: "leverage", label: "Leverage" },
+];
+
 /**
  * Parse the Dzengi tradingHours string and determine if the market is
  * currently open at the given UTC time. Returns the computed status:
@@ -471,6 +481,188 @@ function StatusCell({ row }: { row: TickerRow }) {
   );
 }
 
+// ---- Volume helpers ----
+function fmtUsd(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
+function fmtUsdCompact(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return fmtUsd(n);
+}
+
+// ---- Stats bar card ----
+interface VolumeStatCardProps {
+  label: string;
+  sublabel: string;
+  value: number;
+  pct: number;
+  color: string;
+  bgColor: string;
+  loading: boolean;
+  icon: React.ReactNode;
+}
+
+function VolumeStatCard({
+  label,
+  sublabel,
+  value,
+  pct,
+  color,
+  bgColor,
+  loading,
+  icon,
+}: VolumeStatCardProps) {
+  return (
+    <div
+      className="rounded-xl p-4 flex flex-col gap-2 flex-1 min-w-0"
+      style={{
+        background: "oklch(0.145 0.018 240)",
+        border: "1px solid oklch(1 0 0 / 0.08)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: bgColor, color }}
+          >
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div
+              className="text-xs font-semibold truncate"
+              style={{ color: "oklch(0.910 0.015 240)" }}
+            >
+              {label}
+            </div>
+            <div
+              className="text-[10px] font-mono truncate"
+              style={{ color: "oklch(0.450 0.015 240)" }}
+            >
+              {sublabel}
+            </div>
+          </div>
+        </div>
+        {!loading && (
+          <span
+            className="text-[10px] font-semibold shrink-0 px-2 py-0.5 rounded-full font-mono"
+            style={{
+              color,
+              background: bgColor,
+              border: `1px solid ${color}33`,
+            }}
+          >
+            {pct.toFixed(1)}%
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <Skeleton
+          className="h-8 w-32 rounded mt-1"
+          style={{ background: "oklch(1 0 0 / 0.06)" }}
+        />
+      ) : (
+        <>
+          <div
+            className="font-mono font-bold text-lg sm:text-xl mt-0.5 truncate min-w-0"
+            style={{ color: "oklch(0.910 0.015 240)" }}
+            title={fmtUsd(value)}
+          >
+            {fmtUsdCompact(value)}
+          </div>
+          <div
+            className="relative h-1.5 rounded-full overflow-hidden"
+            style={{ background: "oklch(1 0 0 / 0.07)" }}
+          >
+            <div
+              className="absolute h-full rounded-full transition-all duration-700"
+              style={{ width: `${Math.min(pct, 100)}%`, background: color }}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- Stats bar (3 cards above the table) ----
+// Always receives ALL rows (unfiltered) so totals are accurate regardless of table filters
+interface VolumeStatsBarProps {
+  allRows: TickerRow[];
+  loading: boolean;
+}
+
+function VolumeStatsBar({ allRows, loading }: VolumeStatsBarProps) {
+  let spot = 0;
+  let leverage = 0;
+  for (const r of allRows) {
+    if (r.symbol.includes("_LEVERAGE")) {
+      leverage += r.quoteVolume;
+    } else {
+      spot += r.quoteVolume;
+    }
+  }
+  const total = spot + leverage;
+  const spotPct = total > 0 ? (spot / total) * 100 : 0;
+  const levPct = total > 0 ? (leverage / total) * 100 : 0;
+
+  return (
+    <div
+      className="px-5 py-4"
+      style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}
+      data-ocid="volume.stats_bar"
+    >
+      <div
+        className="text-[11px] font-semibold uppercase tracking-wider mb-3"
+        style={{ color: "oklch(0.500 0.015 240)" }}
+      >
+        Exchange Volume (24h)
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <VolumeStatCard
+          label="Spot Volume"
+          sublabel="No _LEVERAGE suffix"
+          value={spot}
+          pct={spotPct}
+          color="oklch(0.723 0.185 150)"
+          bgColor="oklch(0.723 0.185 150 / 0.12)"
+          loading={loading}
+          icon={<TrendingUp className="w-4 h-4" />}
+        />
+        <VolumeStatCard
+          label="Leverage Volume"
+          sublabel="_LEVERAGE symbols"
+          value={leverage}
+          pct={levPct}
+          color="oklch(0.785 0.135 200)"
+          bgColor="oklch(0.785 0.135 200 / 0.12)"
+          loading={loading}
+          icon={<BarChart2 className="w-4 h-4" />}
+        />
+        <VolumeStatCard
+          label="Total Combined"
+          sublabel="All symbols"
+          value={total}
+          pct={100}
+          color="oklch(0.85 0.18 85)"
+          bgColor="oklch(0.85 0.18 85 / 0.12)"
+          loading={loading}
+          icon={<DollarSign className="w-4 h-4" />}
+        />
+      </div>
+    </div>
+  );
+}
+
 interface VolumeTableProps {
   searchQuery?: string;
 }
@@ -483,6 +675,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("quoteVolume");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [assetFilter, setAssetFilter] = useState<AssetCategory>("all");
+  const [typeFilter, setTypeFilter] = useState<AssetType>("all");
   const [showOpenOnly, setShowOpenOnly] = useState(false);
   // Local search state — synced from prop but also independently editable
   const [localSearch, setLocalSearch] = useState(searchQuery);
@@ -605,18 +798,30 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
     other: rows.filter((r) => classifyAsset(r) === "other").length,
   };
 
-  // Apply category filter, then search filter, then open-only filter, then sort
+  // Compute per-type counts from full rows
+  const typeCounts = {
+    all: rows.length,
+    spot: rows.filter((r) => !r.symbol.includes("_LEVERAGE")).length,
+    leverage: rows.filter((r) => r.symbol.includes("_LEVERAGE")).length,
+  };
+
+  // Apply filters: category → type → search → open-only → sort
   const afterCategory =
     assetFilter === "all"
       ? rows
       : rows.filter((r) => classifyAsset(r) === assetFilter);
 
+  const afterType =
+    typeFilter === "all"
+      ? afterCategory
+      : typeFilter === "spot"
+        ? afterCategory.filter((r) => !r.symbol.includes("_LEVERAGE"))
+        : afterCategory.filter((r) => r.symbol.includes("_LEVERAGE"));
+
   const searchTerm = localSearch.trim().toUpperCase();
   const afterSearch = searchTerm
-    ? afterCategory.filter((r) =>
-        r.cleanSymbol.toUpperCase().includes(searchTerm),
-      )
-    : afterCategory;
+    ? afterType.filter((r) => r.cleanSymbol.toUpperCase().includes(searchTerm))
+    : afterType;
 
   const afterOpenFilter = showOpenOnly
     ? afterSearch.filter((r) => r.status === "TRADING" || !r.status)
@@ -680,6 +885,54 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
       <SortIcon col={col} />
     </button>
   );
+
+  // Helper: render a pill filter button
+  function FilterPill({
+    active,
+    onClick,
+    children,
+    accentColor = "oklch(0.785 0.135 200)",
+  }: {
+    active: boolean;
+    onClick: () => void;
+    children: React.ReactNode;
+    accentColor?: string;
+  }) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none"
+        style={{
+          background: active ? `${accentColor}26` : "oklch(1 0 0 / 0.04)",
+          border: active
+            ? `1px solid ${accentColor}8c`
+            : "1px solid oklch(1 0 0 / 0.08)",
+          color: active ? accentColor : "oklch(0.550 0.015 240)",
+          fontWeight: active ? 600 : 400,
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => {
+          if (!active) {
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "oklch(1 0 0 / 0.07)";
+            (e.currentTarget as HTMLButtonElement).style.color =
+              "oklch(0.720 0.015 240)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!active) {
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "oklch(1 0 0 / 0.04)";
+            (e.currentTarget as HTMLButtonElement).style.color =
+              "oklch(0.550 0.015 240)";
+          }
+        }}
+      >
+        {children}
+      </button>
+    );
+  }
 
   return (
     <div
@@ -771,7 +1024,7 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
           </div>
         </div>
 
-        {/* Search + Open Only toggle + Filter tabs row */}
+        {/* Search + Open Only toggle row */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3">
           {/* Search input */}
           <div className="relative w-full sm:w-56 shrink-0">
@@ -794,40 +1047,10 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
           </div>
 
           {/* Open Only toggle button */}
-          <button
-            type="button"
-            data-ocid="volume.open_only.toggle"
+          <FilterPill
+            active={showOpenOnly}
             onClick={() => setShowOpenOnly((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none shrink-0"
-            style={{
-              background: showOpenOnly
-                ? "oklch(0.723 0.185 150 / 0.15)"
-                : "oklch(1 0 0 / 0.04)",
-              border: showOpenOnly
-                ? "1px solid oklch(0.723 0.185 150 / 0.55)"
-                : "1px solid oklch(1 0 0 / 0.08)",
-              color: showOpenOnly
-                ? "oklch(0.723 0.185 150)"
-                : "oklch(0.550 0.015 240)",
-              fontWeight: showOpenOnly ? 600 : 400,
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              if (!showOpenOnly) {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "oklch(1 0 0 / 0.07)";
-                (e.currentTarget as HTMLButtonElement).style.color =
-                  "oklch(0.720 0.015 240)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!showOpenOnly) {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "oklch(1 0 0 / 0.04)";
-                (e.currentTarget as HTMLButtonElement).style.color =
-                  "oklch(0.550 0.015 240)";
-              }
-            }}
+            accentColor="oklch(0.723 0.185 150)"
           >
             {showOpenOnly ? (
               <span
@@ -837,75 +1060,101 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
             ) : (
               <Wifi className="w-3 h-3 shrink-0" />
             )}
-            <span>Open Only</span>
-          </button>
+            <span data-ocid="volume.open_only.toggle">Open Only</span>
+          </FilterPill>
+        </div>
 
-          {/* Filter tabs */}
-          <div
-            className="flex flex-wrap items-center gap-1.5"
-            data-ocid="volume.filter.tab"
+        {/* Type filter row */}
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+          <span
+            className="text-[10px] font-semibold uppercase tracking-wider mr-0.5 shrink-0"
+            style={{ color: "oklch(0.450 0.015 240)" }}
           >
-            {visibleTabs.map((tab) => {
-              const isActive = effectiveFilter === tab.key;
-              const count = categoryCounts[tab.key];
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setAssetFilter(tab.key)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150 select-none"
-                  style={{
-                    background: isActive
-                      ? "oklch(0.785 0.135 200 / 0.15)"
-                      : "oklch(1 0 0 / 0.04)",
-                    border: isActive
-                      ? "1px solid oklch(0.785 0.135 200 / 0.55)"
-                      : "1px solid oklch(1 0 0 / 0.08)",
-                    color: isActive
+            Type:
+          </span>
+          {TYPE_FILTERS.map((tf) => {
+            const isActive = typeFilter === tf.key;
+            const count = typeCounts[tf.key];
+            return (
+              <FilterPill
+                key={tf.key}
+                active={isActive}
+                onClick={() => setTypeFilter(tf.key)}
+                accentColor={
+                  tf.key === "spot"
+                    ? "oklch(0.723 0.185 150)"
+                    : tf.key === "leverage"
                       ? "oklch(0.785 0.135 200)"
-                      : "oklch(0.550 0.015 240)",
-                    fontWeight: isActive ? 600 : 400,
-                    cursor: "pointer",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        "oklch(1 0 0 / 0.07)";
-                      (e.currentTarget as HTMLButtonElement).style.color =
-                        "oklch(0.720 0.015 240)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        "oklch(1 0 0 / 0.04)";
-                      (e.currentTarget as HTMLButtonElement).style.color =
-                        "oklch(0.550 0.015 240)";
-                    }
-                  }}
-                >
-                  <span>{tab.label}</span>
-                  {!loading && (
-                    <span
-                      className="font-mono text-[10px] px-1 py-0 rounded"
-                      style={{
-                        background: isActive
-                          ? "oklch(0.785 0.135 200 / 0.20)"
-                          : "oklch(1 0 0 / 0.06)",
-                        color: isActive
-                          ? "oklch(0.785 0.135 200)"
-                          : "oklch(0.450 0.015 240)",
-                      }}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                      : "oklch(0.785 0.135 200)"
+                }
+              >
+                <span data-ocid={`volume.type_filter.${tf.key}`}>
+                  {tf.label}
+                </span>
+                {!loading && (
+                  <span
+                    className="font-mono text-[10px] px-1 py-0 rounded"
+                    style={{
+                      background: isActive
+                        ? "oklch(0.785 0.135 200 / 0.20)"
+                        : "oklch(1 0 0 / 0.06)",
+                      color: isActive
+                        ? "oklch(0.785 0.135 200)"
+                        : "oklch(0.450 0.015 240)",
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </FilterPill>
+            );
+          })}
+        </div>
+
+        {/* Category filter tabs row */}
+        <div
+          className="flex flex-wrap items-center gap-1.5 mt-2"
+          data-ocid="volume.filter.tab"
+        >
+          <span
+            className="text-[10px] font-semibold uppercase tracking-wider mr-0.5 shrink-0"
+            style={{ color: "oklch(0.450 0.015 240)" }}
+          >
+            Category:
+          </span>
+          {visibleTabs.map((tab) => {
+            const isActive = effectiveFilter === tab.key;
+            const count = categoryCounts[tab.key];
+            return (
+              <FilterPill
+                key={tab.key}
+                active={isActive}
+                onClick={() => setAssetFilter(tab.key)}
+              >
+                <span>{tab.label}</span>
+                {!loading && (
+                  <span
+                    className="font-mono text-[10px] px-1 py-0 rounded"
+                    style={{
+                      background: isActive
+                        ? "oklch(0.785 0.135 200 / 0.20)"
+                        : "oklch(1 0 0 / 0.06)",
+                      color: isActive
+                        ? "oklch(0.785 0.135 200)"
+                        : "oklch(0.450 0.015 240)",
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </FilterPill>
+            );
+          })}
         </div>
       </div>
+
+      {/* Exchange Volume Stats Bar — always uses ALL rows for accurate totals */}
+      <VolumeStatsBar allRows={rows} loading={loading} />
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -1005,16 +1254,21 @@ export function VolumeTable({ searchQuery = "" }: VolumeTableProps) {
                           >
                             {row.cleanSymbol}
                           </span>
-                          <span
-                            className="text-[10px] mt-0.5"
-                            style={{ color: "oklch(0.450 0.015 240)" }}
-                          >
-                            {row.symbol.includes("_LEVERAGE")
-                              ? "Leverage"
-                              : row.symbol.includes("_SPOT")
-                                ? "Spot"
-                                : ""}
-                          </span>
+                          {row.symbol.includes("_LEVERAGE") ? (
+                            <span
+                              className="text-[10px] mt-0.5 font-medium"
+                              style={{ color: "oklch(0.785 0.135 200)" }}
+                            >
+                              Leverage
+                            </span>
+                          ) : row.symbol.includes("_SPOT") ? (
+                            <span
+                              className="text-[10px] mt-0.5 font-medium"
+                              style={{ color: "oklch(0.723 0.185 150)" }}
+                            >
+                              Spot
+                            </span>
+                          ) : null}
                         </div>
                       </TableCell>
 
