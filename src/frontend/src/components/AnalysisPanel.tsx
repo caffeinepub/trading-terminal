@@ -729,19 +729,23 @@ interface Us10ySparklineProps {
 }
 
 function Us10ySparkline({ data, dates, color }: Us10ySparklineProps) {
-  if (!data || data.length < 2) return null;
+  if (!data || data.length < 1) return null;
 
   const W = 300;
   const H = 80;
   const padX = 2;
   const padY = 8;
 
-  const min = Math.min(...data) - 0.02;
-  const max = Math.max(...data) + 0.02;
+  // For a single point, render a flat horizontal line at the midpoint
+  const effectiveData = data.length === 1 ? [data[0], data[0]] : data;
+  const effectiveDates = data.length === 1 ? [dates[0] ?? ""] : dates;
+
+  const min = Math.min(...effectiveData) - 0.02;
+  const max = Math.max(...effectiveData) + 0.02;
   const range = max - min || 0.1;
 
-  const pts = data.map((v, i) => {
-    const x = padX + (i / (data.length - 1)) * (W - padX * 2);
+  const pts = effectiveData.map((v, i) => {
+    const x = padX + (i / (effectiveData.length - 1)) * (W - padX * 2);
     const y = H - padY - ((v - min) / range) * (H - padY * 2);
     return { x, y };
   });
@@ -754,13 +758,13 @@ function Us10ySparkline({ data, dates, color }: Us10ySparklineProps) {
 
   // Show at most 7 date labels, one per point
   const labelIndices =
-    data.length <= 7
-      ? data.map((_, i) => i)
+    effectiveDates.length <= 7
+      ? effectiveDates.map((_, i) => i)
       : [
           0,
-          Math.floor(data.length / 3),
-          Math.floor((2 * data.length) / 3),
-          data.length - 1,
+          Math.floor(effectiveDates.length / 3),
+          Math.floor((2 * effectiveDates.length) / 3),
+          effectiveDates.length - 1,
         ];
 
   return (
@@ -796,11 +800,11 @@ function Us10ySparkline({ data, dates, color }: Us10ySparklineProps) {
         />
       </svg>
       {/* X-axis labels */}
-      {dates.length > 0 && (
+      {effectiveDates.length > 0 && (
         <div className="relative w-full" style={{ height: 16 }}>
           {labelIndices.map((idx) => {
-            if (!dates[idx]) return null;
-            const pct = (idx / (data.length - 1)) * 100;
+            if (!effectiveDates[idx]) return null;
+            const pct = (idx / (effectiveData.length - 1)) * 100;
             return (
               <span
                 key={idx}
@@ -812,7 +816,7 @@ function Us10ySparkline({ data, dates, color }: Us10ySparklineProps) {
                   whiteSpace: "nowrap",
                 }}
               >
-                {dates[idx]}
+                {effectiveDates[idx]}
               </span>
             );
           })}
@@ -827,6 +831,21 @@ interface Us10ySectionProps {
   data: Us10yState;
 }
 
+function historySourceLabel(source: Us10yState["historySource"]): string {
+  switch (source) {
+    case "FRED":
+      return "FRED";
+    case "Treasury":
+      return "US Treasury";
+    case "moneymatter":
+      return "moneymatter";
+    case "canister":
+      return "Accumulated";
+    default:
+      return "US Treasury";
+  }
+}
+
 function Us10ySection({ data }: Us10ySectionProps) {
   const { current, history, dates } = data;
   const prev = history.length >= 2 ? history[0] : current;
@@ -839,6 +858,7 @@ function Us10ySection({ data }: Us10ySectionProps) {
     ? "oklch(0.723 0.185 150)"
     : "oklch(0.637 0.220 25)";
   const deltaSign = delta > 0 ? "+" : "";
+  const srcLabel = historySourceLabel(data.historySource);
 
   return (
     <div
@@ -896,15 +916,29 @@ function Us10ySection({ data }: Us10ySectionProps) {
             </>
           )}
         </div>
-        <div
-          className="text-[10px] font-semibold px-2 py-0.5 rounded-full self-start"
-          style={{
-            background: "oklch(0.785 0.135 200 / 0.10)",
-            color: "oklch(0.785 0.135 200)",
-            border: "1px solid oklch(0.785 0.135 200 / 0.25)",
-          }}
-        >
-          US Treasury
+        <div className="flex items-center gap-2">
+          {!data.loading && !data.error && (
+            <div
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{
+                background: "oklch(0.785 0.135 200 / 0.07)",
+                color: "oklch(0.600 0.015 240)",
+                border: "1px solid oklch(1 0 0 / 0.10)",
+              }}
+            >
+              {`Source: ${srcLabel}`}
+            </div>
+          )}
+          <div
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full self-start"
+            style={{
+              background: "oklch(0.785 0.135 200 / 0.10)",
+              color: "oklch(0.785 0.135 200)",
+              border: "1px solid oklch(0.785 0.135 200 / 0.25)",
+            }}
+          >
+            US Treasury
+          </div>
         </div>
       </div>
 
@@ -917,11 +951,14 @@ function Us10ySection({ data }: Us10ySectionProps) {
       ) : !data.error && history.length >= 2 ? (
         <Us10ySparkline data={history} dates={dates} color={sparkColor} />
       ) : !data.error && history.length === 1 ? (
+        <Us10ySparkline data={history} dates={dates} color={sparkColor} />
+      ) : !data.error && history.length === 0 && current > 0 ? (
         <div
           className="text-[11px] italic"
           style={{ color: "oklch(0.450 0.015 240)" }}
         >
-          Historical trend unavailable — showing current value only
+          Building 7-day history — check back tomorrow as daily readings
+          accumulate
         </div>
       ) : null}
 

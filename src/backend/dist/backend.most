@@ -31,5 +31,7 @@ actor {
     {
       var root : Node__46230540<Nat, Trade__711108367>;
       var size : Nat__490723111
-    }
+    };
+  stable us10ySnapshots :
+    {var root : Node__46230540<Text, Float>; var size : Nat__490723111}
 };

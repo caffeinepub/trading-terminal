@@ -43,6 +43,12 @@ export const idlService = IDL.Service({
   'getAllTrades' : IDL.Func([], [IDL.Vec(Trade)], ['query']),
   'getTrade' : IDL.Func([IDL.Nat], [Trade], ['query']),
   'getTradingStats' : IDL.Func([], [TradingStats], ['query']),
+  'getUS10YHistory' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64))],
+      ['query'],
+    ),
+  'recordUS10YSnapshot' : IDL.Func([IDL.Float64, IDL.Text], [], []),
   'seedSampleTrades' : IDL.Func([], [], []),
   'updateTrade' : IDL.Func([Trade], [], []),
 });
@@ -85,6 +91,12 @@ export const idlFactory = ({ IDL }) => {
     'getAllTrades' : IDL.Func([], [IDL.Vec(Trade)], ['query']),
     'getTrade' : IDL.Func([IDL.Nat], [Trade], ['query']),
     'getTradingStats' : IDL.Func([], [TradingStats], ['query']),
+    'getUS10YHistory' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64))],
+        ['query'],
+      ),
+    'recordUS10YSnapshot' : IDL.Func([IDL.Float64, IDL.Text], [], []),
     'seedSampleTrades' : IDL.Func([], [], []),
     'updateTrade' : IDL.Func([Trade], [], []),
   });

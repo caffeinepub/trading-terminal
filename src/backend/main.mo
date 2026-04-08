@@ -4,6 +4,7 @@ import Order "mo:core/Order";
 import Map "mo:core/Map";
 import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
+import Text "mo:core/Text";
 
 actor {
   type Ticker = {
@@ -61,6 +62,9 @@ actor {
 
   let trades = Map.empty<Nat, Trade>();
   var nextId = 1;
+
+  // US10Y yield daily snapshots: dateLabel (e.g. "2026-04-08") -> yield value
+  let us10ySnapshots = Map.empty<Text, Float>();
 
   public shared ({ caller }) func addTrade(trade : Trade) : async Nat {
     let newTrade = {
@@ -192,5 +196,29 @@ actor {
     trades.add(trade5.id, trade5);
 
     nextId := 6;
+  };
+
+  // Records a US10Y yield snapshot for a given date label (e.g. "2026-04-08").
+  // Overwrites any existing value for that date, then trims to the last 30 entries.
+  public shared ({ caller }) func recordUS10YSnapshot(value : Float, dateLabel : Text) : async () {
+    us10ySnapshots.add(dateLabel, value);
+    // Trim to last 30 entries: remove the oldest keys if we exceed 30
+    if (us10ySnapshots.size() > 30) {
+      let sorted = us10ySnapshots.keys().toArray().sort();
+      let excess = us10ySnapshots.size() - 30 : Nat;
+      var i = 0;
+      while (i < excess) {
+        us10ySnapshots.remove(sorted[i]);
+        i += 1;
+      };
+    };
+  };
+
+  // Returns all stored US10Y snapshots sorted by dateLabel ascending (oldest first).
+  public query ({ caller }) func getUS10YHistory() : async [(Text, Float)] {
+    let entries = us10ySnapshots.entries().toArray();
+    entries.sort(func((a, _) : (Text, Float), (b, _) : (Text, Float)) : Order.Order {
+      Text.compare(a, b)
+    });
   };
 };

@@ -1,5 +1,6 @@
-// Stub useActor hook — backend canister has no trade methods yet,
-// so actor is always null and isFetching is always false.
+import { useActor as useCaffeineActor } from "@caffeineai/core-infrastructure";
+import { createActor } from "../backend";
+
 export function useActor() {
-  return { actor: null as null, isFetching: false };
+  return useCaffeineActor(createActor);
 }

@@ -129,6 +129,8 @@ export interface backendInterface {
     getAllTrades(): Promise<Array<Trade>>;
     getTrade(id: bigint): Promise<Trade>;
     getTradingStats(): Promise<TradingStats>;
+    getUS10YHistory(): Promise<Array<[string, number]>>;
+    recordUS10YSnapshot(value: number, dateLabel: string): Promise<void>;
     seedSampleTrades(): Promise<void>;
     updateTrade(trade: Trade): Promise<void>;
 }
@@ -216,6 +218,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getTradingStats();
+            return result;
+        }
+    }
+    async getUS10YHistory(): Promise<Array<[string, number]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUS10YHistory();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUS10YHistory();
+            return result;
+        }
+    }
+    async recordUS10YSnapshot(arg0: number, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordUS10YSnapshot(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordUS10YSnapshot(arg0, arg1);
             return result;
         }
     }

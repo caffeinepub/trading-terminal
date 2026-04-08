@@ -42,6 +42,11 @@ service : {
   getAllTrades: () -> (vec Trade) query;
   getTrade: (id: nat) -> (Trade) query;
   getTradingStats: () -> (TradingStats) query;
+  getUS10YHistory: () -> (vec record {
+                                text;
+                                float64;
+                              }) query;
+  recordUS10YSnapshot: (value: float64, dateLabel: text) -> ();
   seedSampleTrades: () -> ();
   updateTrade: (trade: Trade) -> ();
 }

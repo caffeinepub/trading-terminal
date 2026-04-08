@@ -46,6 +46,8 @@ export interface _SERVICE {
   'getAllTrades' : ActorMethod<[], Array<Trade>>,
   'getTrade' : ActorMethod<[bigint], Trade>,
   'getTradingStats' : ActorMethod<[], TradingStats>,
+  'getUS10YHistory' : ActorMethod<[], Array<[string, number]>>,
+  'recordUS10YSnapshot' : ActorMethod<[number, string], undefined>,
   'seedSampleTrades' : ActorMethod<[], undefined>,
   'updateTrade' : ActorMethod<[Trade], undefined>,
 }

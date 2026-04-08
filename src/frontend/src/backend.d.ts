@@ -47,6 +47,8 @@ export interface backendInterface {
     getAllTrades(): Promise<Array<Trade>>;
     getTrade(id: bigint): Promise<Trade>;
     getTradingStats(): Promise<TradingStats>;
+    getUS10YHistory(): Promise<Array<[string, number]>>;
+    recordUS10YSnapshot(value: number, dateLabel: string): Promise<void>;
     seedSampleTrades(): Promise<void>;
     updateTrade(trade: Trade): Promise<void>;
 }
