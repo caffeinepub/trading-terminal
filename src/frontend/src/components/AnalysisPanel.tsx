@@ -391,11 +391,44 @@ function FundingCard({
   const countdown = useCountdown(nextSettlement);
 
   let rateColor = "oklch(0.550 0.015 240)";
+  let sentiment: "bearish" | "bullish" | "neutral" = "neutral";
   if (!loading && !error) {
-    if (Math.abs(rate) < 0.00001) rateColor = "oklch(0.550 0.015 240)";
-    else if (rate > 0) rateColor = "oklch(0.637 0.220 25)";
-    else rateColor = "oklch(0.723 0.185 150)";
+    if (Math.abs(rate) < 0.00001) {
+      rateColor = "oklch(0.550 0.015 240)";
+      sentiment = "neutral";
+    } else if (rate > 0) {
+      rateColor = "oklch(0.637 0.220 25)";
+      sentiment = "bearish";
+    } else {
+      rateColor = "oklch(0.723 0.185 150)";
+      sentiment = "bullish";
+    }
   }
+
+  const sentimentConfig = {
+    bearish: {
+      label: "Bearish",
+      subtext: "Longs pay shorts",
+      bg: "oklch(0.637 0.220 25 / 0.12)",
+      border: "oklch(0.637 0.220 25 / 0.30)",
+      color: "oklch(0.637 0.220 25)",
+    },
+    bullish: {
+      label: "Bullish",
+      subtext: "Shorts pay longs",
+      bg: "oklch(0.723 0.185 150 / 0.12)",
+      border: "oklch(0.723 0.185 150 / 0.30)",
+      color: "oklch(0.723 0.185 150)",
+    },
+    neutral: {
+      label: "Neutral",
+      subtext: "Market balanced",
+      bg: "oklch(0.550 0.015 240 / 0.12)",
+      border: "oklch(0.550 0.015 240 / 0.30)",
+      color: "oklch(0.600 0.015 240)",
+    },
+  };
+  const sc = sentimentConfig[sentiment];
 
   return (
     <div
@@ -431,16 +464,30 @@ function FundingCard({
             </div>
           </div>
         </div>
-        <span
-          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-          style={{
-            background: "oklch(0.785 0.135 200 / 0.10)",
-            color: "oklch(0.785 0.135 200)",
-            border: "1px solid oklch(0.785 0.135 200 / 0.25)",
-          }}
-        >
-          Binance
-        </span>
+        <div className="flex items-center gap-1.5">
+          {!loading && !error && (
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: sc.bg,
+                color: sc.color,
+                border: `1px solid ${sc.border}`,
+              }}
+            >
+              {sc.label}
+            </span>
+          )}
+          <span
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            style={{
+              background: "oklch(0.785 0.135 200 / 0.10)",
+              color: "oklch(0.785 0.135 200)",
+              border: "1px solid oklch(0.785 0.135 200 / 0.25)",
+            }}
+          >
+            Binance
+          </span>
+        </div>
       </div>
 
       {loading ? (
@@ -456,11 +503,16 @@ function FundingCard({
           {"\u2013"}
         </span>
       ) : (
-        <div
-          className="font-mono font-bold text-2xl"
-          style={{ color: rateColor }}
-        >
-          {fmtRate(rate)}
+        <div className="flex flex-col gap-0.5">
+          <div
+            className="font-mono font-bold text-2xl"
+            style={{ color: rateColor }}
+          >
+            {fmtRate(rate)}
+          </div>
+          <div className="text-[11px] font-medium" style={{ color: sc.color }}>
+            {sc.subtext}
+          </div>
         </div>
       )}
 
@@ -1017,14 +1069,95 @@ export function AnalysisPanel() {
               error={data.ethFunding.error}
             />
           </div>
-          <p
-            className="mt-3 text-[11px] italic"
-            style={{ color: "oklch(0.500 0.015 240)" }}
+          <div
+            className="mt-3 rounded-lg p-3 flex gap-2.5"
+            style={{
+              background: "oklch(0.785 0.135 200 / 0.06)",
+              border: "1px solid oklch(0.785 0.135 200 / 0.15)",
+            }}
           >
-            Positive funding = longs pay shorts (market overheated). Negative =
-            shorts pay longs (bearish bias). Settlement intervals follow
-            exchange schedule.
-          </p>
+            <svg
+              role="img"
+              aria-label="Info"
+              className="w-3.5 h-3.5 shrink-0 mt-0.5"
+              viewBox="0 0 16 16"
+              fill="none"
+              style={{ color: "oklch(0.785 0.135 200)" }}
+            >
+              <title>Info</title>
+              <circle
+                cx="8"
+                cy="8"
+                r="7"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M8 7v4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <circle cx="8" cy="5" r="0.75" fill="currentColor" />
+            </svg>
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span className="flex items-center gap-1 text-[11px]">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full shrink-0"
+                    style={{ background: "oklch(0.637 0.220 25)" }}
+                  />
+                  <span
+                    style={{ color: "oklch(0.637 0.220 25)" }}
+                    className="font-semibold"
+                  >
+                    Bearish
+                  </span>
+                  <span style={{ color: "oklch(0.500 0.015 240)" }}>
+                    — rate &gt; 0: longs pay shorts, market is overheated
+                  </span>
+                </span>
+                <span className="flex items-center gap-1 text-[11px]">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full shrink-0"
+                    style={{ background: "oklch(0.723 0.185 150)" }}
+                  />
+                  <span
+                    style={{ color: "oklch(0.723 0.185 150)" }}
+                    className="font-semibold"
+                  >
+                    Bullish
+                  </span>
+                  <span style={{ color: "oklch(0.500 0.015 240)" }}>
+                    — rate &lt; 0: shorts pay longs, bearish bias = bullish
+                    signal
+                  </span>
+                </span>
+                <span className="flex items-center gap-1 text-[11px]">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full shrink-0"
+                    style={{ background: "oklch(0.550 0.015 240)" }}
+                  />
+                  <span
+                    style={{ color: "oklch(0.600 0.015 240)" }}
+                    className="font-semibold"
+                  >
+                    Neutral
+                  </span>
+                  <span style={{ color: "oklch(0.500 0.015 240)" }}>
+                    — rate ≈ 0: market is balanced, no directional pressure
+                  </span>
+                </span>
+              </div>
+              <p
+                className="text-[10px]"
+                style={{ color: "oklch(0.420 0.015 240)" }}
+              >
+                Settlement intervals follow exchange schedule. Funding payments
+                occur between longs and shorts — not charged by the exchange.
+              </p>
+            </div>
+          </div>
         </section>
 
         {/* ===== Section 4: Open Interest ===== */}

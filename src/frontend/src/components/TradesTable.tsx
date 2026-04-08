@@ -13,8 +13,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { Status, TradeType } from "../backend";
-import type { Trade } from "../backend.d.ts";
+import { Status, type Trade, TradeType } from "../types/trades";
 
 const SKELETON_ROWS = ["r1", "r2", "r3", "r4"];
 const SKELETON_CELLS = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"];

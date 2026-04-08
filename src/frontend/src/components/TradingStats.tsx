@@ -7,7 +7,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import type { TradingStats } from "../backend.d.ts";
+import type { TradingStats } from "../types/trades";
 
 interface Props {
   stats: TradingStats | undefined;

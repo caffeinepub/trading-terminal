@@ -1,0 +1,47 @@
+type TradingStats = 
+ record {
+   avgMae: float64;
+   avgMfe: float64;
+   avgTradePnl: Pnl;
+   lossCount: nat;
+   netProfit: Pnl;
+   totalPnl: Pnl;
+   tradeCount: nat;
+   winCount: nat;
+   winRate: float64;
+ };
+type TradeType = 
+ variant {
+   long;
+   short;
+ };
+type Trade = 
+ record {
+   asset: text;
+   currentPrice: float64;
+   entryPrice: float64;
+   id: nat;
+   mae: float64;
+   mfe: float64;
+   pnl: Pnl;
+   quantity: float64;
+   status: Status;
+   timestamp: int;
+   tradeType: TradeType;
+ };
+type Status = 
+ variant {
+   closed;
+   open;
+ };
+type Pnl = float64;
+service : {
+  addTrade: (trade: Trade) -> (nat);
+  closeTrade: (id: nat, finalPrice: float64) -> ();
+  deleteTrade: (id: nat) -> ();
+  getAllTrades: () -> (vec Trade) query;
+  getTrade: (id: nat) -> (Trade) query;
+  getTradingStats: () -> (TradingStats) query;
+  seedSampleTrades: () -> ();
+  updateTrade: (trade: Trade) -> ();
+}
