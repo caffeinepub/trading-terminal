@@ -41,17 +41,25 @@ export interface OpenInterestState {
   error: boolean;
 }
 
+export interface Us10yState {
+  current: number; // current yield %
+  history: number[]; // last 7 trading days, oldest->newest
+  dates: string[]; // corresponding date labels (e.g. "Apr 1")
+  loading: boolean;
+  error: boolean;
+}
+
 export interface AnalysisData {
   fearGreed: FearGreedState;
   btcFunding: FundingState;
   ethFunding: FundingState;
   spx: MacroAssetState;
   gold: MacroAssetState;
-  us10y: MacroAssetState;
   dxy: MacroAssetState;
   btcSocial: BtcSocialState;
   btcOI: OpenInterestState;
   ethOI: OpenInterestState;
+  us10y: Us10yState;
 }
 
 // ---- Default states ----
@@ -95,9 +103,15 @@ const defaultOI: OpenInterestState = {
   error: false,
 };
 
+const defaultUs10y: Us10yState = {
+  current: 0,
+  history: [],
+  dates: [],
+  loading: true,
+  error: false,
+};
+
 // ---- CORS proxy helpers ----
-// /get returns JSON wrapper { contents: "...", status: { http_code: 200 } }
-// /raw returns the body directly (unreliable for some hosts)
 const ALLORIGINS_GET = "https://api.allorigins.win/get?url=";
 const ALLORIGINS_RAW = "https://api.allorigins.win/raw?url=";
 
@@ -123,7 +137,7 @@ const BINANCE_FAPI = "https://fapi.binance.com";
 const BINANCE_FUTURES_DATA = "https://fapi.binance.com";
 
 // ---- Fetch helpers ----
-async function fetchFearGreed(): Promise<FearGreedState> {
+export async function fetchFearGreed(): Promise<FearGreedState> {
   const res = await fetch("https://api.alternative.me/fng/?limit=1");
   if (!res.ok) throw new Error("fng");
   const json = await res.json();
@@ -139,7 +153,9 @@ async function fetchFearGreed(): Promise<FearGreedState> {
 }
 
 // ---- Binance funding rate ----
-async function fetchBinanceFunding(symbol: string): Promise<FundingState> {
+export async function fetchBinanceFunding(
+  symbol: string,
+): Promise<FundingState> {
   const premiumUrl = `${BINANCE_FAPI}/fapi/v1/premiumIndex?symbol=${symbol}`;
   let res: Response;
   try {
@@ -205,7 +221,9 @@ async function getDzengiTicker() {
   return dzengiTickerCache!;
 }
 
-async function fetchDzengiMacro(symbol: string): Promise<MacroAssetState> {
+export async function fetchDzengiMacro(
+  symbol: string,
+): Promise<MacroAssetState> {
   const tickers = await getDzengiTicker();
   const item = tickers.find((t) => t.symbol === symbol);
   if (!item) throw new Error(`dzengi macro: ${symbol} not found`);
@@ -222,56 +240,122 @@ async function fetchDzengiMacro(symbol: string): Promise<MacroAssetState> {
 }
 
 // ---- DXY from Dzengi API ----
-// Dzengi carries DXY as a native symbol in its ticker feed
-async function fetchDXY(): Promise<MacroAssetState> {
+export async function fetchDXY(): Promise<MacroAssetState> {
   return fetchDzengiMacro("DXY");
 }
 
-// ---- US 10-Year Treasury yield from moneymatter.me via allorigins /get proxy ----
-// Returns yield as a percentage (e.g. 3.97 means 3.97%)
-async function fetchUS10Y(): Promise<MacroAssetState> {
-  const url =
-    "https://moneymatter.me/api/treasury/interest-rates?lastDailyResult=true";
+// ---- US 10Y Treasury Yield — 7-day history ----
+// Primary: US Treasury OData API (current month + previous month, pick last 7 valid trading days)
+// Fallback: moneymatter.me via allorigins /raw (current value only)
 
-  let json: {
-    success: boolean;
-    data: Array<Record<string, number | string>>;
-  };
+interface TreasuryODataRow {
+  NEW_DATE: string;
+  BC_10YEAR: string | null;
+}
 
-  // Try direct fetch first (works in environments without CORS restrictions)
+interface TreasuryODataResponse {
+  value: TreasuryODataRow[];
+}
+
+function formatDateLabel(dateStr: string): string {
+  // dateStr looks like "2025-04-07T00:00:00" or "2025-04-07"
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+async function fetchTreasuryODataMonth(
+  month: number,
+  year: number,
+): Promise<TreasuryODataRow[]> {
+  const url = `https://data.treasury.gov/feed.svc/DailyTreasuryYieldCurveRateData?$filter=month(NEW_DATE)%20eq%20${month}%20and%20year(NEW_DATE)%20eq%20${year}&$format=json`;
+  let json: TreasuryODataResponse;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error();
     json = await res.json();
   } catch {
-    // Fall back to allorigins /get proxy which wraps the body in .contents
-    json = await fetchViaProxy<typeof json>(url);
+    // Try via proxy
+    json = await fetchViaProxy<TreasuryODataResponse>(url);
   }
-
-  const item = json?.data?.[0];
-  if (!item) throw new Error("us10y empty");
-
-  const yield10y = Number(item.BC_10YEAR);
-  if (Number.isNaN(yield10y) || yield10y === 0)
-    throw new Error("us10y bad value");
-
-  let prevClose = yield10y;
-  if (json?.data?.length >= 2) {
-    const prev = Number(json.data[1]?.BC_10YEAR);
-    if (!Number.isNaN(prev) && prev > 0) prevClose = prev;
-  }
-
-  return {
-    price: yield10y,
-    prevClose,
-    high52w: 0,
-    low52w: 0,
-    loading: false,
-    error: false,
-  };
+  return Array.isArray(json?.value) ? json.value : [];
 }
 
-async function fetchBtcSocial(): Promise<BtcSocialState> {
+export async function fetchUS10Y(): Promise<Us10yState> {
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curYear = now.getFullYear();
+
+  // Also fetch previous month to ensure we have enough data near month boundaries
+  let prevMonth = curMonth - 1;
+  let prevYear = curYear;
+  if (prevMonth === 0) {
+    prevMonth = 12;
+    prevYear -= 1;
+  }
+
+  let rows: TreasuryODataRow[] = [];
+  try {
+    const [curRows, prevRows] = await Promise.all([
+      fetchTreasuryODataMonth(curMonth, curYear),
+      fetchTreasuryODataMonth(prevMonth, prevYear),
+    ]);
+    rows = [...prevRows, ...curRows];
+  } catch {
+    // Try fallback if OData completely fails
+  }
+
+  // Filter to rows with valid BC_10YEAR values, sort oldest->newest
+  const valid = rows
+    .filter(
+      (r) =>
+        r.BC_10YEAR !== null &&
+        r.BC_10YEAR !== "" &&
+        !Number.isNaN(Number(r.BC_10YEAR)) &&
+        Number(r.BC_10YEAR) > 0,
+    )
+    .sort(
+      (a, b) => new Date(a.NEW_DATE).getTime() - new Date(b.NEW_DATE).getTime(),
+    );
+
+  if (valid.length >= 1) {
+    const last7 = valid.slice(-7);
+    const history = last7.map((r) => Number(r.BC_10YEAR));
+    const dates = last7.map((r) => formatDateLabel(r.NEW_DATE));
+    const current = history[history.length - 1];
+    return { current, history, dates, loading: false, error: false };
+  }
+
+  // Fallback: moneymatter.me (single value, no history)
+  try {
+    const mmUrl =
+      "https://moneymatter.me/api/treasury/interest-rates?lastDailyResult=true";
+    let json: {
+      success: boolean;
+      data: Array<Record<string, number | string>>;
+    };
+    try {
+      const raw = await fetch(proxiedRaw(mmUrl));
+      if (!raw.ok) throw new Error();
+      json = await raw.json();
+    } catch {
+      json = await fetchViaProxy<typeof json>(mmUrl);
+    }
+    const item = json?.data?.[0];
+    const yield10y = Number(item?.BC_10YEAR);
+    if (Number.isNaN(yield10y) || yield10y === 0) throw new Error("bad value");
+    return {
+      current: yield10y,
+      history: [yield10y],
+      dates: [formatDateLabel(new Date().toISOString())],
+      loading: false,
+      error: false,
+    };
+  } catch {
+    return { ...defaultUs10y, loading: false, error: true };
+  }
+}
+
+export async function fetchBtcSocial(): Promise<BtcSocialState> {
   const res = await fetch(
     "https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false",
   );
@@ -286,7 +370,7 @@ async function fetchBtcSocial(): Promise<BtcSocialState> {
 }
 
 // ---- Binance Open Interest (current) ----
-async function fetchBinanceOI(
+export async function fetchBinanceOI(
   symbol: string,
 ): Promise<{ oiUsd: number; oiCcy: number }> {
   const oiUrl = `${BINANCE_FAPI}/fapi/v1/openInterest?symbol=${symbol}`;
@@ -328,7 +412,7 @@ async function fetchBinanceOI(
 }
 
 // ---- Binance OI history (48 1h candles) ----
-async function fetchBinanceOIHistory(symbol: string): Promise<number[]> {
+export async function fetchBinanceOIHistory(symbol: string): Promise<number[]> {
   const url = `${BINANCE_FUTURES_DATA}/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=48`;
   let res: Response;
   try {
@@ -344,7 +428,9 @@ async function fetchBinanceOIHistory(symbol: string): Promise<number[]> {
   return json.slice(-48).map((row) => Number(row.sumOpenInterestValue));
 }
 
-async function fetchBinanceOIFull(symbol: string): Promise<OpenInterestState> {
+export async function fetchBinanceOIFull(
+  symbol: string,
+): Promise<OpenInterestState> {
   const [spot, history] = await Promise.all([
     fetchBinanceOI(symbol),
     fetchBinanceOIHistory(symbol),
@@ -381,8 +467,8 @@ export function useAnalysisData(): AnalysisData {
   const [ethFunding, setEthFunding] = useState<FundingState>(defaultFunding);
   const [spx, setSpx] = useState<MacroAssetState>(defaultMacro);
   const [gold, setGold] = useState<MacroAssetState>(defaultMacro);
-  const [us10y, setUs10y] = useState<MacroAssetState>(defaultMacro);
   const [dxy, setDxy] = useState<MacroAssetState>(defaultMacro);
+  const [us10y, setUs10y] = useState<Us10yState>(defaultUs10y);
   const [btcSocial, setBtcSocial] = useState<BtcSocialState>(defaultSocial);
   const [btcOI, setBtcOI] = useState<OpenInterestState>(defaultOI);
   const [ethOI, setEthOI] = useState<OpenInterestState>(defaultOI);
@@ -424,9 +510,8 @@ export function useAnalysisData(): AnalysisData {
     return () => clearInterval(id);
   }, [loadFunding]);
 
-  // -- Macro assets: poll every 5 min --
+  // -- Macro assets (SPX, Gold, DXY): poll every 5 min --
   const loadMacro = useCallback(() => {
-    // Invalidate the ticker cache so we get fresh data
     dzengiTickerCache = null;
     safeFetch(() => fetchDzengiMacro("US500."), mountedRef, setSpx, {
       ...defaultMacro,
@@ -438,13 +523,6 @@ export function useAnalysisData(): AnalysisData {
       loading: false,
       error: true,
     });
-    // US 10Y yield via moneymatter.me (allorigins /get proxy fallback)
-    safeFetch(fetchUS10Y, mountedRef, setUs10y, {
-      ...defaultMacro,
-      loading: false,
-      error: true,
-    });
-    // DXY from Dzengi native symbol
     safeFetch(fetchDXY, mountedRef, setDxy, {
       ...defaultMacro,
       loading: false,
@@ -457,6 +535,21 @@ export function useAnalysisData(): AnalysisData {
     const id = setInterval(loadMacro, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [loadMacro]);
+
+  // -- US10Y: poll every 30 min (Treasury data updates once daily) --
+  const loadUs10y = useCallback(() => {
+    safeFetch(fetchUS10Y, mountedRef, setUs10y, {
+      ...defaultUs10y,
+      loading: false,
+      error: true,
+    });
+  }, []);
+
+  useEffect(() => {
+    loadUs10y();
+    const id = setInterval(loadUs10y, 30 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [loadUs10y]);
 
   // -- BTC Social: poll every 10 min --
   const loadSocial = useCallback(() => {
@@ -507,8 +600,8 @@ export function useAnalysisData(): AnalysisData {
     ethFunding,
     spx,
     gold,
-    us10y,
     dxy,
+    us10y,
     btcSocial,
     btcOI,
     ethOI,

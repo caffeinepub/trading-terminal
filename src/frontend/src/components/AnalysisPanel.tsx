@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import type {
   MacroAssetState,
   OpenInterestState,
+  Us10yState,
 } from "../hooks/useAnalysisData";
 import { useAnalysisData } from "../hooks/useAnalysisData";
 
@@ -105,24 +106,20 @@ interface GaugeProps {
 }
 
 function FearGreedGauge({ value, loading }: GaugeProps) {
-  // CoinMarketCap-style: 5 discrete colored arc segments
-  // left = Extreme Fear (0° = 180deg), right = Extreme Greed (100% = 0deg)
-  // Top-facing semicircle: center at bottom of SVG, arc goes upward
   const cx = 65;
-  const cy = 70; // bottom-center baseline
+  const cy = 70;
   const r = 55;
   const GAP_DEG = 2.5;
-  const segSpan = (180 - 4 * GAP_DEG) / 5; // ~34° per segment
+  const segSpan = (180 - 4 * GAP_DEG) / 5;
 
   const SEGMENTS = [
-    { color: "#EA3943" }, // Extreme Fear  (left, 180°→~144°)
-    { color: "#EA8C00" }, // Fear
-    { color: "#F3D42F" }, // Neutral
-    { color: "#93D900" }, // Greed
-    { color: "#16C784" }, // Extreme Greed (right, ~36°→0°)
+    { color: "#EA3943" },
+    { color: "#EA8C00" },
+    { color: "#F3D42F" },
+    { color: "#93D900" },
+    { color: "#16C784" },
   ];
 
-  // Y is negated so the arc faces upward (top semicircle)
   function polarToXY(angleDeg: number) {
     const rad = (angleDeg * Math.PI) / 180;
     return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
@@ -134,7 +131,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
     return `M ${p1.x.toFixed(4)} ${p1.y.toFixed(4)} A ${r} ${r} 0 0 0 ${p2.x.toFixed(4)} ${p2.y.toFixed(4)}`;
   }
 
-  // Needle: value 0 → 180° (far left), value 100 → 0° (far right)
   const needleAngle = 180 - (value / 100) * 180;
   const needlePt = polarToXY(needleAngle);
 
@@ -151,8 +147,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
     >
       <svg width="130" height="75" viewBox="0 0 130 75" aria-hidden="true">
         {SEGMENTS.map((seg, i) => {
-          // segment 0: 180° → (180° - segSpan)
-          // segment 1: (180° - segSpan - GAP) → ...
           const startAngle = 180 - i * (segSpan + GAP_DEG);
           const endAngle = startAngle - segSpan;
           return (
@@ -166,8 +160,6 @@ function FearGreedGauge({ value, loading }: GaugeProps) {
             />
           );
         })}
-
-        {/* Needle: white-ring + black-fill dot on the arc */}
         {!loading && (
           <>
             <circle
@@ -361,7 +353,7 @@ function MacroCard({
         </div>
       )}
 
-      {/* Range bar — only when show52wRange=true AND data has 52w values */}
+      {/* Range bar */}
       {show52wRange && !data.loading && !data.error && data.high52w > 0 && (
         <RangeBar
           price={data.price}
@@ -567,9 +559,13 @@ function FundingCard({
 // ---- OI Sparkline ----
 interface SparklineProps {
   data: number[];
+  color?: string;
 }
 
-function OISparkline({ data }: SparklineProps) {
+function OISparkline({
+  data,
+  color = "oklch(0.785 0.135 200)",
+}: SparklineProps) {
   if (!data || data.length < 2) return null;
 
   const W = 200;
@@ -587,12 +583,10 @@ function OISparkline({ data }: SparklineProps) {
   });
 
   const polylinePoints = points.join(" ");
-
   const firstX = pad;
   const lastX = pad + (W - pad * 2);
   const fillPath = `M ${points[0]} L ${points.join(" L ")} L ${lastX},${H - pad} L ${firstX},${H - pad} Z`;
-
-  const gradientId = `oi-sparkline-grad-${Math.random().toString(36).slice(2, 7)}`;
+  const gradientId = `sparkline-grad-${Math.random().toString(36).slice(2, 7)}`;
 
   return (
     <svg
@@ -604,23 +598,15 @@ function OISparkline({ data }: SparklineProps) {
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop
-            offset="0%"
-            stopColor="oklch(0.785 0.135 200)"
-            stopOpacity="0.25"
-          />
-          <stop
-            offset="100%"
-            stopColor="oklch(0.785 0.135 200)"
-            stopOpacity="0"
-          />
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={fillPath} fill={`url(#${gradientId})`} />
       <polyline
         points={polylinePoints}
         fill="none"
-        stroke="oklch(0.785 0.135 200)"
+        stroke={color}
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -735,19 +721,256 @@ function OICard({ asset, data }: OICardProps) {
   );
 }
 
+// ---- US10Y Sparkline with x-axis date labels ----
+interface Us10ySparklineProps {
+  data: number[];
+  dates: string[];
+  color: string;
+}
+
+function Us10ySparkline({ data, dates, color }: Us10ySparklineProps) {
+  if (!data || data.length < 2) return null;
+
+  const W = 300;
+  const H = 80;
+  const padX = 2;
+  const padY = 8;
+
+  const min = Math.min(...data) - 0.02;
+  const max = Math.max(...data) + 0.02;
+  const range = max - min || 0.1;
+
+  const pts = data.map((v, i) => {
+    const x = padX + (i / (data.length - 1)) * (W - padX * 2);
+    const y = H - padY - ((v - min) / range) * (H - padY * 2);
+    return { x, y };
+  });
+
+  const polylinePoints = pts.map((p) => `${p.x},${p.y}`).join(" ");
+  const innerPoints = pts.map((p) => `L ${p.x},${p.y}`).join(" ");
+  const fillPath = `M ${pts[0].x},${pts[0].y} ${innerPoints} L ${pts[pts.length - 1].x},${H - padY} L ${pts[0].x},${H - padY} Z`;
+
+  const gradId = `us10y-grad-${Math.random().toString(36).slice(2, 7)}`;
+
+  // Show at most 7 date labels, one per point
+  const labelIndices =
+    data.length <= 7
+      ? data.map((_, i) => i)
+      : [
+          0,
+          Math.floor(data.length / 3),
+          Math.floor((2 * data.length) / 3),
+          data.length - 1,
+        ];
+
+  return (
+    <div className="w-full">
+      <svg
+        width="100%"
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.30" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={fillPath} fill={`url(#${gradId})`} />
+        <polyline
+          points={polylinePoints}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Dot on last point */}
+        <circle
+          cx={pts[pts.length - 1].x}
+          cy={pts[pts.length - 1].y}
+          r="3"
+          fill={color}
+        />
+      </svg>
+      {/* X-axis labels */}
+      {dates.length > 0 && (
+        <div className="relative w-full" style={{ height: 16 }}>
+          {labelIndices.map((idx) => {
+            if (!dates[idx]) return null;
+            const pct = (idx / (data.length - 1)) * 100;
+            return (
+              <span
+                key={idx}
+                className="absolute text-[9px] font-mono -translate-x-1/2"
+                style={{
+                  left: `${pct}%`,
+                  top: 0,
+                  color: "oklch(0.450 0.015 240)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {dates[idx]}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- US 10Y Treasury section card ----
+interface Us10ySectionProps {
+  data: Us10yState;
+}
+
+function Us10ySection({ data }: Us10ySectionProps) {
+  const { current, history, dates } = data;
+  const prev = history.length >= 2 ? history[0] : current;
+  const delta = current - prev;
+  const isDown = delta <= 0; // yield falling = bullish (green)
+  const sparkColor = isDown
+    ? "oklch(0.723 0.185 150)"
+    : "oklch(0.637 0.220 25)";
+  const deltaColor = isDown
+    ? "oklch(0.723 0.185 150)"
+    : "oklch(0.637 0.220 25)";
+  const deltaSign = delta > 0 ? "+" : "";
+
+  return (
+    <div
+      className="rounded-xl p-4 sm:p-5 flex flex-col gap-3"
+      style={{
+        background: "oklch(0.155 0.020 240)",
+        border: "1px solid oklch(1 0 0 / 0.08)",
+      }}
+    >
+      {/* Top row: yield value + delta */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          {data.loading ? (
+            <Skeleton
+              className="h-10 w-24 rounded"
+              style={{ background: "oklch(1 0 0 / 0.06)" }}
+            />
+          ) : data.error ? (
+            <span
+              className="text-3xl font-mono font-bold"
+              style={{ color: "oklch(0.450 0.015 240)" }}
+            >
+              unavailable
+            </span>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className="font-mono font-black text-3xl sm:text-4xl"
+                  style={{ color: "oklch(0.910 0.015 240)" }}
+                >
+                  {fmtNum(current, 2)}%
+                </span>
+                {history.length >= 2 && (
+                  <span
+                    className="flex items-center gap-1 text-sm font-semibold font-mono"
+                    style={{ color: deltaColor }}
+                  >
+                    {isDown ? (
+                      <TrendingDown className="w-3.5 h-3.5" />
+                    ) : (
+                      <TrendingUp className="w-3.5 h-3.5" />
+                    )}
+                    {deltaSign}
+                    {fmtNum(delta, 2)}%
+                  </span>
+                )}
+              </div>
+              <div
+                className="text-[11px] mt-0.5"
+                style={{ color: "oklch(0.500 0.015 240)" }}
+              >
+                {`7-day change from ${history.length >= 2 ? `${fmtNum(prev, 2)}%` : "—"}`}
+              </div>
+            </>
+          )}
+        </div>
+        <div
+          className="text-[10px] font-semibold px-2 py-0.5 rounded-full self-start"
+          style={{
+            background: "oklch(0.785 0.135 200 / 0.10)",
+            color: "oklch(0.785 0.135 200)",
+            border: "1px solid oklch(0.785 0.135 200 / 0.25)",
+          }}
+        >
+          US Treasury
+        </div>
+      </div>
+
+      {/* Sparkline */}
+      {data.loading ? (
+        <Skeleton
+          className="h-20 w-full rounded"
+          style={{ background: "oklch(1 0 0 / 0.06)" }}
+        />
+      ) : !data.error && history.length >= 2 ? (
+        <Us10ySparkline data={history} dates={dates} color={sparkColor} />
+      ) : !data.error && history.length === 1 ? (
+        <div
+          className="text-[11px] italic"
+          style={{ color: "oklch(0.450 0.015 240)" }}
+        >
+          Historical trend unavailable — showing current value only
+        </div>
+      ) : null}
+
+      {/* Interpretation note */}
+      {!data.loading && !data.error && (
+        <p
+          className="text-[11px] italic"
+          style={{ color: "oklch(0.450 0.015 240)" }}
+        >
+          {isDown
+            ? "Yields falling \u2014 typically bullish for equities and bonds."
+            : "Yields rising \u2014 increases borrowing costs, typically bearish pressure on risk assets."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ---- Section header ----
-function SectionHeader({ title, badge }: { title: string; badge?: string }) {
+function SectionHeader({
+  title,
+  subtitle,
+  badge,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+}) {
   return (
     <div className="flex items-center gap-3 mb-4">
-      <h2
-        className="text-[11px] font-semibold uppercase tracking-widest"
-        style={{ color: "oklch(0.612 0.020 240)" }}
-      >
-        {title}
-      </h2>
+      <div className="flex flex-col gap-0.5">
+        <h2
+          className="text-[11px] font-semibold uppercase tracking-widest"
+          style={{ color: "oklch(0.612 0.020 240)" }}
+        >
+          {title}
+        </h2>
+        {subtitle && (
+          <span
+            className="text-[10px]"
+            style={{ color: "oklch(0.450 0.015 240)" }}
+          >
+            {subtitle}
+          </span>
+        )}
+      </div>
       {badge && (
         <span
-          className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+          className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
           style={{
             background: "oklch(0.785 0.135 200 / 0.10)",
             color: "oklch(0.785 0.135 200)",
@@ -817,7 +1040,7 @@ export function AnalysisPanel() {
         <section data-ocid="analysis.section">
           <SectionHeader title="Market Sentiment" badge="alternative.me" />
           <div className="flex flex-col lg:flex-row items-start gap-4 sm:gap-6">
-            {/* Gauge card — full width on mobile, fixed width on desktop */}
+            {/* Gauge card */}
             <div
               className="rounded-xl p-4 sm:p-5 flex flex-col items-center w-full lg:w-auto"
               style={{
@@ -846,7 +1069,6 @@ export function AnalysisPanel() {
                 </div>
               ) : (
                 <>
-                  {/* Gauge SVG centered */}
                   <div className="flex justify-center w-full">
                     <FearGreedGauge
                       value={fearGreed.value}
@@ -878,7 +1100,7 @@ export function AnalysisPanel() {
                 </>
               )}
 
-              {/* Scale legend — color bar + labels, no overflow */}
+              {/* Scale legend */}
               <div className="mt-4 w-full">
                 <div
                   className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-center"
@@ -886,7 +1108,6 @@ export function AnalysisPanel() {
                 >
                   Scale
                 </div>
-                {/* Gradient color bar */}
                 <div
                   className="h-2 rounded-full w-full"
                   style={{
@@ -894,7 +1115,6 @@ export function AnalysisPanel() {
                       "linear-gradient(90deg, #EA3943, #EA8C00, #F3D42F, #93D900, #16C784)",
                   }}
                 />
-                {/* Zone labels — 3 anchors only to avoid overflow */}
                 <div className="flex justify-between mt-1.5">
                   <span
                     className="text-[9px] font-medium"
@@ -915,7 +1135,6 @@ export function AnalysisPanel() {
                     Extreme Greed
                   </span>
                 </div>
-                {/* Numeric range */}
                 <div className="flex justify-between mt-0.5">
                   <span
                     className="text-[9px] font-mono"
@@ -1004,10 +1223,10 @@ export function AnalysisPanel() {
           </div>
         </section>
 
-        {/* ===== Section 2: Macro Markets (Dzengi) ===== */}
+        {/* ===== Section 2: Macro Markets — 3 cards (SPX, Gold, DXY) ===== */}
         <section data-ocid="analysis.section">
-          <SectionHeader title="Macro Markets" badge="Dzengi / Treasury" />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <SectionHeader title="Macro Markets" badge="Dzengi" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <MacroCard
               label="S&P 500"
               ticker="US500"
@@ -1024,16 +1243,6 @@ export function AnalysisPanel() {
               prefix="$"
               decimals={2}
               icon={<DollarSign className="w-3.5 h-3.5" />}
-              show52wRange={false}
-            />
-            <MacroCard
-              label="US10Y Yield"
-              ticker="US10Y"
-              data={data.us10y}
-              prefix=""
-              suffix="%"
-              decimals={2}
-              icon={<TrendingUp className="w-3.5 h-3.5" />}
               show52wRange={false}
             />
             <MacroCard
@@ -1117,6 +1326,7 @@ export function AnalysisPanel() {
                     Bearish
                   </span>
                   <span style={{ color: "oklch(0.500 0.015 240)" }}>
+                    {" "}
                     — rate &gt; 0: longs pay shorts, market is overheated
                   </span>
                 </span>
@@ -1132,6 +1342,7 @@ export function AnalysisPanel() {
                     Bullish
                   </span>
                   <span style={{ color: "oklch(0.500 0.015 240)" }}>
+                    {" "}
                     — rate &lt; 0: shorts pay longs, bearish bias = bullish
                     signal
                   </span>
@@ -1148,6 +1359,7 @@ export function AnalysisPanel() {
                     Neutral
                   </span>
                   <span style={{ color: "oklch(0.500 0.015 240)" }}>
+                    {" "}
                     — rate ≈ 0: market is balanced, no directional pressure
                   </span>
                 </span>
@@ -1180,7 +1392,17 @@ export function AnalysisPanel() {
           </p>
         </section>
 
-        {/* ===== Section 5: BTC Social Sentiment ===== */}
+        {/* ===== Section 5: US 10Y Treasury Yield ===== */}
+        <section data-ocid="analysis.section">
+          <SectionHeader
+            title="US 10Y Treasury Yield"
+            subtitle="7-day trend"
+            badge="US Treasury"
+          />
+          <Us10ySection data={data.us10y} />
+        </section>
+
+        {/* ===== Section 6: BTC Social Sentiment ===== */}
         <section data-ocid="analysis.section">
           <SectionHeader title="BTC Social Sentiment" badge="CoinGecko" />
           <div
