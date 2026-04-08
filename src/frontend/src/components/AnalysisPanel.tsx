@@ -983,7 +983,7 @@ export function AnalysisPanel() {
             />
             <MacroCard
               label="DXY"
-              ticker="DX-Y.NYB"
+              ticker="Dzengi"
               data={data.dxy}
               prefix=""
               decimals={2}

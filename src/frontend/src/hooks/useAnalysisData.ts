@@ -95,11 +95,27 @@ const defaultOI: OpenInterestState = {
   error: false,
 };
 
-// ---- CORS proxy helper (allorigins.win) ----
-const ALLORIGINS = "https://api.allorigins.win/raw?url=";
+// ---- CORS proxy helpers ----
+// /get returns JSON wrapper { contents: "...", status: { http_code: 200 } }
+// /raw returns the body directly (unreliable for some hosts)
+const ALLORIGINS_GET = "https://api.allorigins.win/get?url=";
+const ALLORIGINS_RAW = "https://api.allorigins.win/raw?url=";
 
-function proxied(url: string): string {
-  return `${ALLORIGINS}${encodeURIComponent(url)}`;
+function proxiedGet(url: string): string {
+  return `${ALLORIGINS_GET}${encodeURIComponent(url)}`;
+}
+
+function proxiedRaw(url: string): string {
+  return `${ALLORIGINS_RAW}${encodeURIComponent(url)}`;
+}
+
+// Fetch via allorigins /get and parse the contents string as JSON
+async function fetchViaProxy<T>(url: string): Promise<T> {
+  const res = await fetch(proxiedGet(url));
+  if (!res.ok) throw new Error(`proxy fetch failed: ${url}`);
+  const wrapper = await res.json();
+  if (!wrapper?.contents) throw new Error(`proxy empty contents: ${url}`);
+  return JSON.parse(wrapper.contents) as T;
 }
 
 // ---- Binance base URL ----
@@ -123,22 +139,19 @@ async function fetchFearGreed(): Promise<FearGreedState> {
 }
 
 // ---- Binance funding rate ----
-// Fetch current funding rate + next settlement time from Binance
 async function fetchBinanceFunding(symbol: string): Promise<FundingState> {
-  // premiumIndex gives current funding rate and next funding time
   const premiumUrl = `${BINANCE_FAPI}/fapi/v1/premiumIndex?symbol=${symbol}`;
   let res: Response;
   try {
     res = await fetch(premiumUrl);
     if (!res.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(premiumUrl));
+    res = await fetch(proxiedRaw(premiumUrl));
     if (!res.ok) throw new Error("binance funding");
   }
   const item = await res.json();
   if (!item || !item.symbol) throw new Error("binance funding empty");
 
-  // Get interval hours from fundingInfo endpoint
   let intervalHours = 8;
   try {
     const infoUrl = `${BINANCE_FAPI}/fapi/v1/fundingInfo`;
@@ -147,7 +160,7 @@ async function fetchBinanceFunding(symbol: string): Promise<FundingState> {
       infoRes = await fetch(infoUrl);
       if (!infoRes.ok) throw new Error();
     } catch {
-      infoRes = await fetch(proxied(infoUrl));
+      infoRes = await fetch(proxiedRaw(infoUrl));
     }
     if (infoRes.ok) {
       const infoJson: Array<{ symbol: string; fundingIntervalHours: number }> =
@@ -169,8 +182,7 @@ async function fetchBinanceFunding(symbol: string): Promise<FundingState> {
   };
 }
 
-// ---- Dzengi macro data ----
-// Cache the full ticker response to avoid N fetches for N macro symbols
+// ---- Dzengi ticker cache ----
 let dzengiTickerCache: Array<{
   symbol: string;
   lastPrice: string;
@@ -202,57 +214,47 @@ async function fetchDzengiMacro(symbol: string): Promise<MacroAssetState> {
   return {
     price,
     prevClose: price - change,
-    high52w: 0,
-    low52w: 0,
+    high52w: Number(item.highPrice ?? 0),
+    low52w: Number(item.lowPrice ?? 0),
     loading: false,
     error: false,
   };
 }
 
-// ---- Real DXY (US Dollar Index) from Yahoo Finance via CORS proxy ----
+// ---- DXY from Dzengi API ----
+// Dzengi carries DXY as a native symbol in its ticker feed
 async function fetchDXY(): Promise<MacroAssetState> {
-  const yahooUrl =
-    "https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=5d";
-  const res = await fetch(proxied(yahooUrl));
-  if (!res.ok) throw new Error("dxy yahoo");
-  const json = await res.json();
-  const meta = json?.chart?.result?.[0]?.meta;
-  if (!meta) throw new Error("dxy meta missing");
-  const price = Number(meta.regularMarketPrice);
-  const prevClose = Number(
-    meta.chartPreviousClose ?? meta.previousClose ?? price,
-  );
-  return {
-    price,
-    prevClose,
-    high52w: Number(meta.fiftyTwoWeekHigh ?? 0),
-    low52w: Number(meta.fiftyTwoWeekLow ?? 0),
-    loading: false,
-    error: false,
-  };
+  return fetchDzengiMacro("DXY");
 }
 
-// ---- Real US 10Y Treasury yield from moneymatter.me Treasury API ----
-// Returns yield as a percentage (e.g. 4.35 means 4.35%)
+// ---- US 10-Year Treasury yield from moneymatter.me via allorigins /get proxy ----
+// Returns yield as a percentage (e.g. 3.97 means 3.97%)
 async function fetchUS10Y(): Promise<MacroAssetState> {
   const url =
     "https://moneymatter.me/api/treasury/interest-rates?lastDailyResult=true";
-  let res: Response;
+
+  let json: {
+    success: boolean;
+    data: Array<Record<string, number | string>>;
+  };
+
+  // Try direct fetch first (works in environments without CORS restrictions)
   try {
-    res = await fetch(url);
+    const res = await fetch(url);
     if (!res.ok) throw new Error();
+    json = await res.json();
   } catch {
-    res = await fetch(proxied(url));
-    if (!res.ok) throw new Error("us10y");
+    // Fall back to allorigins /get proxy which wraps the body in .contents
+    json = await fetchViaProxy<typeof json>(url);
   }
-  const json = await res.json();
+
   const item = json?.data?.[0];
   if (!item) throw new Error("us10y empty");
+
   const yield10y = Number(item.BC_10YEAR);
   if (Number.isNaN(yield10y) || yield10y === 0)
     throw new Error("us10y bad value");
 
-  // Fallback to previous entry for prevClose if available
   let prevClose = yield10y;
   if (json?.data?.length >= 2) {
     const prev = Number(json.data[1]?.BC_10YEAR);
@@ -287,7 +289,6 @@ async function fetchBtcSocial(): Promise<BtcSocialState> {
 async function fetchBinanceOI(
   symbol: string,
 ): Promise<{ oiUsd: number; oiCcy: number }> {
-  // Get current price to calculate USD value
   const oiUrl = `${BINANCE_FAPI}/fapi/v1/openInterest?symbol=${symbol}`;
   const priceUrl = `${BINANCE_FAPI}/fapi/v1/premiumIndex?symbol=${symbol}`;
 
@@ -296,14 +297,13 @@ async function fetchBinanceOI(
     oiRes = await fetch(oiUrl);
     if (!oiRes.ok) throw new Error();
   } catch {
-    oiRes = await fetch(proxied(oiUrl));
+    oiRes = await fetch(proxiedRaw(oiUrl));
     if (!oiRes.ok) throw new Error("binance oi");
   }
   const oiJson = await oiRes.json();
   const oiCcy = Number(oiJson.openInterest);
   if (Number.isNaN(oiCcy)) throw new Error("binance oi bad");
 
-  // Get mark price to compute USD value
   let markPrice = 0;
   try {
     let priceRes: Response;
@@ -311,7 +311,7 @@ async function fetchBinanceOI(
       priceRes = await fetch(priceUrl);
       if (!priceRes.ok) throw new Error();
     } catch {
-      priceRes = await fetch(proxied(priceUrl));
+      priceRes = await fetch(proxiedRaw(priceUrl));
     }
     if (priceRes.ok) {
       const priceJson = await priceRes.json();
@@ -329,20 +329,18 @@ async function fetchBinanceOI(
 
 // ---- Binance OI history (48 1h candles) ----
 async function fetchBinanceOIHistory(symbol: string): Promise<number[]> {
-  // openInterestHist is under fapi base but different path
   const url = `${BINANCE_FUTURES_DATA}/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=48`;
   let res: Response;
   try {
     res = await fetch(url);
     if (!res.ok) throw new Error();
   } catch {
-    res = await fetch(proxied(url));
+    res = await fetch(proxiedRaw(url));
     if (!res.ok) throw new Error("binance oi history");
   }
   const json: Array<{ sumOpenInterestValue: string; timestamp: number }> =
     await res.json();
   if (!Array.isArray(json)) throw new Error("binance oi history format");
-  // Already in ascending order (oldest first), take last 48
   return json.slice(-48).map((row) => Number(row.sumOpenInterestValue));
 }
 
@@ -440,13 +438,13 @@ export function useAnalysisData(): AnalysisData {
       loading: false,
       error: true,
     });
-    // Real US 10Y yield from Treasury API
+    // US 10Y yield via moneymatter.me (allorigins /get proxy fallback)
     safeFetch(fetchUS10Y, mountedRef, setUs10y, {
       ...defaultMacro,
       loading: false,
       error: true,
     });
-    // Real DXY (US Dollar Index) from Yahoo Finance
+    // DXY from Dzengi native symbol
     safeFetch(fetchDXY, mountedRef, setDxy, {
       ...defaultMacro,
       loading: false,
