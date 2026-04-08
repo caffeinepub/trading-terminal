@@ -23,19 +23,87 @@ import {
   Settings,
   Shield,
   Star,
+  TrendingDown,
+  TrendingUp,
   User,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const NAV_LINKS = [
   { label: "Dashboard" },
-  { label: "Markets" },
   { label: "Analysis" },
   { label: "Statistics" },
   { label: "Tools" },
   { label: "Volume" },
 ];
+
+interface TickerItem {
+  symbol: string;
+  priceChangePercent: string;
+}
+
+interface GainerLoser {
+  symbol: string;
+  pct: number;
+}
+
+function cleanSymbol(raw: string): string {
+  return raw
+    .replace("_LEVERAGE", "")
+    .replace("/USD", "")
+    .replace("/USDT", "")
+    .split(".")[0]
+    .split("_")[0];
+}
+
+function useTopGainerLoser() {
+  const [gainer, setGainer] = useState<GainerLoser | null>(null);
+  const [loser, setLoser] = useState<GainerLoser | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const res = await fetch(
+          "https://api-adapter.dzengi.com/api/v1/ticker/24hr",
+        );
+        if (!res.ok) return;
+        const data: TickerItem[] = await res.json();
+        const valid = data.filter((t) => {
+          const pct = Number.parseFloat(t.priceChangePercent);
+          return !Number.isNaN(pct) && pct !== 0;
+        });
+        if (valid.length === 0) return;
+        const sorted = [...valid].sort(
+          (a, b) =>
+            Number.parseFloat(b.priceChangePercent) -
+            Number.parseFloat(a.priceChangePercent),
+        );
+        const top = sorted[0];
+        const bottom = sorted[sorted.length - 1];
+        setGainer({
+          symbol: cleanSymbol(top.symbol),
+          pct: Number.parseFloat(top.priceChangePercent),
+        });
+        setLoser({
+          symbol: cleanSymbol(bottom.symbol),
+          pct: Number.parseFloat(bottom.priceChangePercent),
+        });
+      } catch {
+        // silent fail
+      }
+    }
+
+    void fetchData();
+    timerRef.current = setInterval(() => void fetchData(), 10_000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  return { gainer, loser };
+}
 
 interface TopNavProps {
   searchQuery: string;
@@ -53,6 +121,7 @@ export function TopNav({
   const [traderOpen, setTraderOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const { gainer, loser } = useTopGainerLoser();
 
   function handleMobileNavClick(label: string) {
     onViewChange(label);
@@ -69,7 +138,7 @@ export function TopNav({
         backdropFilter: "blur(12px)",
       }}
     >
-      <div className="flex items-center h-14 sm:h-16 px-3 sm:px-6 gap-2 sm:gap-4 md:gap-8">
+      <div className="flex items-center h-14 sm:h-16 px-3 sm:px-6 gap-2 sm:gap-4 md:gap-6">
         {/* Hamburger — mobile only */}
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild>
@@ -182,6 +251,66 @@ export function TopNav({
                 );
               })}
             </nav>
+
+            {/* Gainer/Loser in drawer */}
+            {(gainer || loser) && (
+              <>
+                <div
+                  className="h-px mx-0"
+                  style={{ background: "oklch(1 0 0 / 0.07)" }}
+                />
+                <div className="px-4 py-3 flex flex-col gap-2">
+                  {gainer && (
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-[10px] uppercase tracking-wider"
+                        style={{ color: "oklch(0.612 0.020 240)" }}
+                      >
+                        Top Gainer
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: "oklch(0.820 0.015 240)" }}
+                        >
+                          {gainer.symbol}
+                        </span>
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: "oklch(0.723 0.185 150)" }}
+                        >
+                          +{gainer.pct.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {loser && (
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-[10px] uppercase tracking-wider"
+                        style={{ color: "oklch(0.612 0.020 240)" }}
+                      >
+                        Top Loser
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="text-xs font-semibold"
+                          style={{ color: "oklch(0.820 0.015 240)" }}
+                        >
+                          {loser.symbol}
+                        </span>
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: "oklch(0.637 0.220 25)" }}
+                        >
+                          {loser.pct.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </SheetContent>
         </Sheet>
 
@@ -240,6 +369,79 @@ export function TopNav({
             );
           })}
         </nav>
+
+        {/* Top Gainer / Loser strip — hidden on xs, icon-only on sm/md, full on lg+ */}
+        {(gainer || loser) && (
+          <div
+            className="hidden sm:flex items-center gap-1.5 md:gap-3 shrink-0 px-2 md:px-3 py-1 rounded-lg"
+            style={{
+              background: "oklch(1 0 0 / 0.04)",
+              border: "1px solid oklch(1 0 0 / 0.07)",
+            }}
+            data-ocid="market.gainer_loser_strip"
+          >
+            {gainer && (
+              <div className="flex items-center gap-1 md:gap-1.5">
+                <TrendingUp
+                  className="w-3 h-3 shrink-0"
+                  style={{ color: "oklch(0.723 0.185 150)" }}
+                />
+                <span
+                  className="hidden lg:inline text-[10px] uppercase tracking-wider shrink-0"
+                  style={{ color: "oklch(0.560 0.015 240)" }}
+                >
+                  Gainer
+                </span>
+                <span
+                  className="text-xs font-semibold hidden md:inline"
+                  style={{ color: "oklch(0.820 0.015 240)" }}
+                >
+                  {gainer.symbol}
+                </span>
+                <span
+                  className="text-xs font-bold tabular-nums"
+                  style={{ color: "oklch(0.723 0.185 150)" }}
+                >
+                  +{gainer.pct.toFixed(2)}%
+                </span>
+              </div>
+            )}
+
+            {gainer && loser && (
+              <div
+                className="hidden md:block w-px h-4 shrink-0"
+                style={{ background: "oklch(1 0 0 / 0.08)" }}
+              />
+            )}
+
+            {loser && (
+              <div className="flex items-center gap-1 md:gap-1.5">
+                <TrendingDown
+                  className="w-3 h-3 shrink-0"
+                  style={{ color: "oklch(0.637 0.220 25)" }}
+                />
+                <span
+                  className="hidden lg:inline text-[10px] uppercase tracking-wider shrink-0"
+                  style={{ color: "oklch(0.560 0.015 240)" }}
+                >
+                  Loser
+                </span>
+                <span
+                  className="text-xs font-semibold hidden md:inline"
+                  style={{ color: "oklch(0.820 0.015 240)" }}
+                >
+                  {loser.symbol}
+                </span>
+                <span
+                  className="text-xs font-bold tabular-nums"
+                  style={{ color: "oklch(0.637 0.220 25)" }}
+                >
+                  {loser.pct.toFixed(2)}%
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Spacer */}
         <div className="flex-1" />

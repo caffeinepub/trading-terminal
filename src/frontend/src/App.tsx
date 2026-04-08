@@ -45,6 +45,7 @@ function App() {
   const isVolume = activeView === "Volume";
   const isAnalysis = activeView === "Analysis";
   const isStatistics = activeView === "Statistics";
+  // "Markets" was removed from nav; any stale activeView value falls through to dashboard
   const showMainGrid = !isVolume && !isAnalysis && !isStatistics;
 
   return (
